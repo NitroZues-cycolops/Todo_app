@@ -1346,6 +1346,7 @@
                             <option value="done">✅ Done</option>
                             <option value="today">🎯 Today</option>
                             <option value="week">🗓 Week</option>
+                            <option value="month">📅 Month</option>
                         </select>
                     </div>
                     <div id="allTasksList" class="list-group" style="flex: 1; overflow-y: auto; min-height: 200px;"></div>
@@ -1510,6 +1511,37 @@ function updateStats(d){
 }
 
 /* ========= TASK RENDER ========= */
+/* Recurrence description helpers */
+function getRecurrenceDesc(rule, until){
+    if(!rule) return '';
+    if(rule === 'FREQ=ALWAYS') return 'Pinned (always)';
+    const parts = {};
+    for(const part of rule.split(';')){
+        const eq = part.indexOf('=');
+        if(eq > 0){
+            parts[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
+        }
+    }
+    const freq = parts.FREQ || 'DAILY';
+    let desc = '';
+    if(freq === 'DAILY') desc = 'Repeats daily';
+    else if(freq === 'WEEKLY'){
+        if(parts.BYDAY){
+            const days = parts.BYDAY.split(',').map(d=>d.trim());
+            const dayNames = {'MO':'Mon','TU':'Tue','WE':'Wed','TH':'Thu','FR':'Fri','SA':'Sat','SU':'Sun'};
+            desc = 'Repeats weekly on ' + days.map(d=>dayNames[d]||d).join(', ');
+        } else {
+            desc = 'Repeats weekly';
+        }
+    }
+    const untilValue = until || parts.UNTIL;
+    if(untilValue){
+        const untilDate = new Date(untilValue + 'T00:00:00');
+        desc += ' until ' + untilDate.toLocaleDateString('en-GB', {day:'numeric', month:'short'});
+    }
+    return desc;
+}
+
 function taskChips(t){
     const pri = t.priority || 'medium';
     let h = '';
@@ -1519,6 +1551,15 @@ function taskChips(t){
     if (t.start_time) {
         const timeDisplay = t.end_time ? `${t.start_time} – ${t.end_time}` : t.start_time;
         h += `<span class="chip time">⏰ ${timeDisplay}</span>`;
+    }
+    // Recurrence badge
+    if (t.recurrence_rule) {
+        const desc = getRecurrenceDesc(t.recurrence_rule, t.rrule_until);
+        if(t.occurrenceNote){
+            h += `<span class="chip recur">${desc} · ${t.occurrenceNote}</span>`;
+        } else {
+            h += `<span class="chip recur">${desc}</span>`;
+        }
     }
     if (t.category) h += `<span class="chip cat">🏷 ${escapeHtml(t.category)}</span>`;
     if (t.url) h += `<a class="chip link" href="${t.url}" target="_blank" onclick="event.stopPropagation()">🔗 Link</a>`;
@@ -1642,23 +1683,53 @@ function renderAllTasks(){
     $('allTasksList').innerHTML = list.map(t=>renderTaskCard(t)).join('');
 }
 
-// Async version that expands recurring tasks
+// Async version: one row per master task, with occurrence counts for date filters
+function getTaskListRange(filter, today){
+    if(filter === 'today') return {start: today, end: today, label: 'today'};
+    if(filter === 'week'){
+        const end = new Date(today);
+        end.setDate(end.getDate() + 7);
+        return {start: today, end, label: 'this week'};
+    }
+    if(filter === 'month'){
+        const start = new Date(today.getFullYear(), today.getMonth(), 1);
+        const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        return {start, end, label: 'this month'};
+    }
+    return null;
+}
+
 async function renderAllTasksWithRecurrence(){
     const filter = $('taskFilter').value;
     const today = new Date();
-    const weekEnd = new Date(today); weekEnd.setDate(weekEnd.getDate()+7);
 
-    // Get expanded tasks for the displayed date range
-    const allTasks = await getTasksForDateRange(today, weekEnd);
+    // Always render master tasks (S.tasks), never expanded occurrence rows.
+    let list = S.tasks.map(t => ({...t, occurrenceNote: ''}));
+    const range = getTaskListRange(filter, today);
 
-    const todayStr = fmtDate(today);
-    const weekStr = fmtDate(weekEnd);
-    let list = allTasks;
+    if(range){
+        const expanded = await getTasksForDateRange(range.start, range.end);
+        const occurrenceCounts = new Map();
+        for(const t of expanded){
+            occurrenceCounts.set(t.id, (occurrenceCounts.get(t.id) || 0) + 1);
+        }
+
+        const startStr = fmtDate(range.start);
+        const endStr = fmtDate(range.end);
+        list = list.filter(t => {
+            if(t.recurrence_rule) return occurrenceCounts.has(t.id);
+            return !!(t.due_date && t.due_date >= startStr && t.due_date <= endStr);
+        });
+
+        for(const t of list){
+            if(!t.recurrence_rule) continue;
+            const count = occurrenceCounts.get(t.id) || 0;
+            t.occurrenceNote = count === 1 ? `1 time ${range.label}` : `${count} times ${range.label}`;
+        }
+    }
 
     if(filter==='pending') list = list.filter(t=>!t.completed);
     if(filter==='done') list = list.filter(t=>t.completed);
-    if(filter==='today') list = list.filter(t=>t.due_date===todayStr);
-    if(filter==='week') list = list.filter(t=>t.due_date && t.due_date>=todayStr && t.due_date<=weekStr);
 
     list.sort((a,b)=>{
         if(a.completed !== b.completed) return a.completed?1:-1;

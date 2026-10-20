@@ -365,8 +365,14 @@ def update_task(task_id: int, task: schemas.TaskUpdate, db: Session = Depends(ge
         raise HTTPException(status_code=422, detail="end_time must be after start_time")
 
     # Mirror start_time to due_time for backward compat (Sheets, reminders, Dashboard)
-    if 'start_time' in update_data and update_data['start_time']:
-        update_data['due_time'] = update_data['start_time']
+    # Also: clearing start_time (null/empty) clears due_time to make task all-day
+    if 'start_time' in update_data:
+        if update_data['start_time']:
+            update_data['due_time'] = update_data['start_time']
+        else:
+            # Start time cleared (null or empty) → make all-day by clearing due_time
+            update_data['start_time'] = None
+            update_data['due_time'] = None
 
     for key, value in update_data.items():
         setattr(db_task, key, value)
