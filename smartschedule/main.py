@@ -183,7 +183,11 @@ async def home_page(request: Request):
 # ============================================================
 @app.post("/api/tasks", response_model=schemas.Task)
 def create_task(task: schemas.TaskCreate, db: Session = Depends(get_db)):
-    db_task = models.Task(**task.dict())
+    task_dict = task.dict()
+    # Mirror start_time to due_time for backward compat (Sheets, reminders, Dashboard)
+    if task_dict.get('start_time'):
+        task_dict['due_time'] = task_dict['start_time']
+    db_task = models.Task(**task_dict)
     db.add(db_task)
     db.commit()
     db.refresh(db_task)
@@ -354,11 +358,15 @@ def update_task(task_id: int, task: schemas.TaskUpdate, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail="Task not found")
     update_data = task.dict(exclude_unset=True)
 
-    # Validate time constraints on merged values
-    merged_start = update_data.get('start_time', db_task.start_time)
+    # Validate time constraints on merged values (use start_time || due_time for start)
+    merged_start = update_data.get('start_time', db_task.start_time or db_task.due_time)
     merged_end = update_data.get('end_time', db_task.end_time)
     if merged_start and merged_end and merged_end <= merged_start:
         raise HTTPException(status_code=422, detail="end_time must be after start_time")
+
+    # Mirror start_time to due_time for backward compat (Sheets, reminders, Dashboard)
+    if 'start_time' in update_data and update_data['start_time']:
+        update_data['due_time'] = update_data['start_time']
 
     for key, value in update_data.items():
         setattr(db_task, key, value)
@@ -429,7 +437,11 @@ def create_tasks_bulk(tasks_list: List[schemas.TaskCreate], db: Session = Depend
     created_tasks = []
     try:
         for task_data in tasks_list:
-            t = models.Task(**task_data.dict())
+            task_dict = task_data.dict()
+            # Mirror start_time to due_time for backward compat (Sheets, reminders, Dashboard)
+            if task_dict.get('start_time'):
+                task_dict['due_time'] = task_dict['start_time']
+            t = models.Task(**task_dict)
             db.add(t)
             created_tasks.append(t)
         db.commit()
