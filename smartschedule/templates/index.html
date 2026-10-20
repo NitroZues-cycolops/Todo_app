@@ -515,20 +515,67 @@
             position: relative;
             z-index: 1;
         }
-        .cal-dots { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; }
-        .cal-dot {
-            width: 7px; height: 7px;
-            border-radius: 50%;
+        .cal-chips { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; max-height: 92px; overflow: hidden; }
+        .cal-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+            border-left: 3px solid;
+            background: white;
+            transition: all 0.15s;
         }
+        .cal-chip:hover { transform: translateX(2px); opacity: 0.9; }
+        .cal-chip.event { border-left: 0; background: var(--chip-bg, #6366f1); color: white; }
+        .cal-chip.task { border-left: 3px solid var(--chip-color, #6366f1); background: white; color: var(--text-0); }
+        .cal-chip.done { opacity: 0.5; text-decoration: line-through; color: var(--text-3); }
+        .cal-chip.allday { font-weight: 600; }
         .cal-more {
             font-size: 10.5px;
             color: var(--text-2);
             margin-top: 2px;
-            padding: 1px 4px;
+            padding: 2px 6px;
             border-radius: 4px;
             background: #f1f5f9;
             display: inline-block;
+            cursor: pointer;
+            font-weight: 500;
         }
+        .cal-more:hover { background: #e2e8f0; }
+        .cal-day-list {
+            position: fixed;
+            background: var(--bg-card-solid);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px;
+            z-index: 200;
+            max-height: 300px;
+            overflow-y: auto;
+            box-shadow: 0 10px 30px rgba(15,23,42,0.2);
+            min-width: 250px;
+        }
+        .cal-day-list-item {
+            padding: 8px 12px;
+            border-radius: 8px;
+            border-left: 3px solid;
+            margin-bottom: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.15s;
+            background: #f8fafc;
+        }
+        .cal-day-list-item:hover { background: #eef2ff; transform: translateX(2px); }
+        .cal-day-list-item.event { border-left-color: #6366f1; }
+        .cal-day-list-item.task { border-left-color: var(--item-color, #6366f1); }
+        .cal-day-list-item.done { opacity: 0.6; text-decoration: line-through; }
+
 
         /* ==========  DAY DETAIL  ========== */
         .day-head {
@@ -862,10 +909,10 @@
                 gap: 0 !important;
             }
 
+            /* Task panel hidden by default on mobile */
             #view-calendar > div > div:last-child {
-                display: none;
                 position: fixed;
-                bottom: 0;
+                bottom: -100vh;
                 left: 0;
                 right: 0;
                 max-height: 70vh;
@@ -877,10 +924,55 @@
                 border-bottom: none;
                 padding: 20px;
                 overflow-y: auto;
+                flex-direction: column;
+                transition: bottom 0.3s ease;
+                width: 100%;
             }
 
+            /* Task panel visible when open */
             #view-calendar > div > div:last-child.open {
-                display: flex;
+                bottom: 0;
+            }
+
+            /* Backdrop for bottom sheet */
+            #view-calendar > div > div:last-child.open::before {
+                content: '';
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(15,23,42,0.4);
+                z-index: -1;
+                pointer-events: auto;
+                cursor: pointer;
+            }
+        }
+
+        /* Desktop: task panel visible by default */
+        @media (min-width: 721px) {
+            #view-calendar > div > div:last-child {
+                display: flex !important;
+                position: static !important;
+                bottom: auto !important;
+                max-height: none !important;
+                border-radius: 0 !important;
+                border: none !important;
+                background: none !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                transition: none !important;
+            }
+
+            #mobileTaskBtn {
+                display: none !important;
+            }
+        }
+
+        @media (max-width: 720px) {
+            #mobileTaskBtn {
+                display: inline-flex !important;
+                margin-left: auto;
             }
         }
 
@@ -1140,7 +1232,7 @@
                             <label for="multiSelectToggle" style="margin: 0;">Select Multiple</label>
                         </div>
                         <button class="btn btn-sm" onclick="goToday()">Today</button>
-                        <button class="btn btn-sm btn-primary" id="mobileTaskBtn" style="display:none; margin-left: auto;" onclick="toggleMobileTaskPanel()">+ Task</button>
+                        <button class="btn btn-sm btn-primary" id="mobileTaskBtn" onclick="toggleMobileTaskPanel()">+ Task</button>
                     </div>
                 </div>
                 <div id="calendar" class="calendar"></div>
@@ -1337,54 +1429,90 @@ function selDateStr(){ return fmtDate(S.selected); }
 /* ========= API ========= */
 const api = {
     get: async p => {
-        const r = await fetch(p);
-        if(!r.ok) {
-            const e = await r.json().catch(()=>({}));
-            const msg = e.detail || `HTTP ${r.status}`;
-            toast(msg, 'err');
-            throw new Error(msg);
+        try {
+            const r = await fetch(p);
+            if(!r.ok) {
+                const e = await r.json().catch(()=>({}));
+                const msg = e.detail || `HTTP ${r.status}`;
+                toast(msg, 'err');
+                throw new Error(msg);
+            }
+            return await r.json();
+        } catch(err) {
+            // Don't double-toast if it's already an HTTP error
+            if(!err.message.startsWith('HTTP')) {
+                toast("Can't reach the server: " + err.message, 'err');
+            }
+            throw err;
         }
-        return await r.json();
     },
     post: async (p,b) => {
-        const r = await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
-        if(!r.ok) {
-            const e = await r.json().catch(()=>({}));
-            const msg = e.detail || `HTTP ${r.status}`;
-            toast(msg, 'err');
-            throw new Error(msg);
+        try {
+            const r = await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
+            if(!r.ok) {
+                const e = await r.json().catch(()=>({}));
+                const msg = e.detail || `HTTP ${r.status}`;
+                toast(msg, 'err');
+                throw new Error(msg);
+            }
+            return await r.json();
+        } catch(err) {
+            if(!err.message.startsWith('HTTP')) {
+                toast("Can't reach the server: " + err.message, 'err');
+            }
+            throw err;
         }
-        return await r.json();
     },
     put: async (p,b) => {
-        const r = await fetch(p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
-        if(!r.ok) {
-            const e = await r.json().catch(()=>({}));
-            const msg = e.detail || `HTTP ${r.status}`;
-            toast(msg, 'err');
-            throw new Error(msg);
+        try {
+            const r = await fetch(p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+            if(!r.ok) {
+                const e = await r.json().catch(()=>({}));
+                const msg = e.detail || `HTTP ${r.status}`;
+                toast(msg, 'err');
+                throw new Error(msg);
+            }
+            return await r.json();
+        } catch(err) {
+            if(!err.message.startsWith('HTTP')) {
+                toast("Can't reach the server: " + err.message, 'err');
+            }
+            throw err;
         }
-        return await r.json();
     },
     patch: async (p,b) => {
-        const r = await fetch(p,{method:'PATCH',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
-        if(!r.ok) {
-            const e = await r.json().catch(()=>({}));
-            const msg = e.detail || `HTTP ${r.status}`;
-            toast(msg, 'err');
-            throw new Error(msg);
+        try {
+            const r = await fetch(p,{method:'PATCH',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
+            if(!r.ok) {
+                const e = await r.json().catch(()=>({}));
+                const msg = e.detail || `HTTP ${r.status}`;
+                toast(msg, 'err');
+                throw new Error(msg);
+            }
+            return await r.json();
+        } catch(err) {
+            if(!err.message.startsWith('HTTP')) {
+                toast("Can't reach the server: " + err.message, 'err');
+            }
+            throw err;
         }
-        return await r.json();
     },
     del: async p => {
-        const r = await fetch(p,{method:'DELETE'});
-        if(!r.ok) {
-            const e = await r.json().catch(()=>({}));
-            const msg = e.detail || `HTTP ${r.status}`;
-            toast(msg, 'err');
-            throw new Error(msg);
+        try {
+            const r = await fetch(p,{method:'DELETE'});
+            if(!r.ok) {
+                const e = await r.json().catch(()=>({}));
+                const msg = e.detail || `HTTP ${r.status}`;
+                toast(msg, 'err');
+                throw new Error(msg);
+            }
+            return await r.json();
+        } catch(err) {
+            if(!err.message.startsWith('HTTP')) {
+                toast("Can't reach the server: " + err.message, 'err');
+            }
+            throw err;
         }
-        return await r.json();
     },
 };
 
@@ -1644,29 +1772,19 @@ function toggleMobileTaskPanel(){
     }
 }
 
-function hideMobileTaskPanel(){
+function openMobileTaskPanel(){
+    const taskPanel = document.querySelector('#view-calendar > div > div:last-child');
+    if(taskPanel && window.innerWidth <= 720) {
+        taskPanel.classList.add('open');
+    }
+}
+
+function closeMobileTaskPanel(){
     const taskPanel = document.querySelector('#view-calendar > div > div:last-child');
     if(taskPanel) {
         taskPanel.classList.remove('open');
     }
 }
-
-// Show/hide mobile task button based on screen size
-function updateMobileUI(){
-    const isMobile = window.innerWidth <= 720;
-    const mobileBtn = $('mobileTaskBtn');
-    const taskPanel = document.querySelector('#view-calendar > div > div:last-child');
-    if(mobileBtn) {
-        mobileBtn.style.display = isMobile ? 'inline-flex' : 'none';
-    }
-    if(isMobile && taskPanel) {
-        taskPanel.style.display = 'none';
-    }
-}
-
-window.addEventListener('resize', updateMobileUI);
-// Call on initial load
-updateMobileUI();
 
 function setViewSeg(){
     document.querySelectorAll('#viewSeg button').forEach(b=>{
@@ -1733,15 +1851,97 @@ function renderCalendar(){
         const inSelection = S.selectedDates.includes(ds);
         const dayEvs = allEventsMap[ds] || [];
         const dayTs = allTasksMap[ds] || [];
-        html += `<div class="cal-cell ${c.other?'other':''} ${isToday?'today':''} ${sel?'selected':''} ${inSelection?'in-selection':''}" data-date="${ds}">
+
+        // Combine and sort: all-day first, then by start time
+        const allDayEvs = dayEvs.filter(e => e.all_day).sort((a,b) => (a.title||'').localeCompare(b.title||''));
+        const timedEvs = dayEvs.filter(e => !e.all_day).sort((a,b) => (a.start_time||'').localeCompare(b.start_time||''));
+        const allDayTs = dayTs.filter(t => !t.start_time).sort((a,b) => (a.title||'').localeCompare(b.title||''));
+        const timedTs = dayTs.filter(t => t.start_time).sort((a,b) => (a.start_time||'').localeCompare(b.start_time||''));
+
+        const sortedItems = [...allDayEvs, ...timedEvs, ...allDayTs, ...timedTs];
+        const displayItems = sortedItems.slice(0, 3);
+        const moreCount = Math.max(0, sortedItems.length - 3);
+
+        let chipsHtml = '';
+        displayItems.forEach(item => {
+            const isEvent = item.start_date !== undefined;
+            const col = item.color || (isEvent ? '#6366f1' : pickColor(item.priority));
+            const isDone = item.completed;
+            const title = escapeHtml((item.title || '').substring(0, 20));
+            const timeStr = item.start_time ? item.start_time.substring(0,5) : '';
+            const displayText = timeStr ? timeStr + ' ' + title : title;
+            const chipClass = `cal-chip ${isEvent ? 'event' : 'task'} ${isDone ? 'done' : ''} ${!timeStr ? 'allday' : ''}`;
+            const dataId = isEvent ? `event-${item.id}` : `task-${item.id}`;
+            const handler = isEvent ? `openEventModal(${item.id})` : `openTaskModal(${item.id})`;
+
+            chipsHtml += `<div class="${chipClass}" style="--chip-color:${col}; --chip-bg:${col};" onclick="event.stopPropagation(); ${handler}" data-item="${dataId}" title="${escapeHtml(item.title)}">${displayText}</div>`;
+        });
+
+        const moreBtn = moreCount > 0 ? `<span class="cal-more" onclick="event.stopPropagation(); showDayList('${ds}', ${JSON.stringify(sortedItems).replace(/"/g, '&quot;')})">+${moreCount} more</span>` : '';
+
+        html += `<div class="cal-cell ${c.other?'other':''} ${isToday?'today':''} ${sel?'selected':''} ${inSelection?'in-selection':''}" data-date="${ds}" onclick="pickDate('${ds}')">
             <div class="cal-num">${c.d.getDate()}</div>
-            ${dayEvs.slice(0,3).map(e=>`<div class="cal-ev" style="background:${e.color||'#6366f1'};" onclick="event.stopPropagation(); openEventModal(${e.id})">${!e.all_day?e.start_time+' ':''}${escapeHtml(e.title)}</div>`).join('')}
-            ${dayEvs.length>3?`<span class="cal-more">+${dayEvs.length-3} more</span>`:''}
-            ${dayTs.length?`<div class="cal-dots">${dayTs.slice(0,8).map(t=>{const col=t.color||pickColor(t.priority);return `<span class="cal-dot" style="background:${t.completed?'#cbd5e1':col};${t.completed?'opacity:0.5;':''}" title="${escapeHtml(t.title)}"></span>`}).join('')}</div>`:''}
+            ${sortedItems.length > 0 ? `<div class="cal-chips">${chipsHtml}</div>` : ''}
+            ${moreBtn}
         </div>`;
     });
     cal.innerHTML = html;
 }
+function showDayList(ds, items){
+    // Parse items array and show a popup list
+    const html = `
+    <div class="cal-day-list">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <strong style="font-size:13px;">${fmtNice(ds)}</strong>
+            <button class="btn btn-sm btn-ghost" onclick="closeDayList()" style="padding:4px 8px;">✕</button>
+        </div>
+        ${items.map((item, idx) => {
+            const isEvent = item.start_date !== undefined;
+            const col = item.color || (isEvent ? '#6366f1' : pickColor(item.priority));
+            const isDone = item.completed;
+            const timeStr = item.start_time ? item.start_time.substring(0,5) + ' ' : '';
+            const title = escapeHtml((item.title || '').substring(0, 40));
+            const handler = isEvent ? `openEventModal(${item.id}); closeDayList();` : `openTaskModal(${item.id}); closeDayList();`;
+            return `<div class="cal-day-list-item ${isEvent ? 'event' : 'task'} ${isDone ? 'done' : ''}" style="--item-color:${col};" onclick="event.stopPropagation(); ${handler}">
+                <strong>${timeStr}</strong>${title}
+            </div>`;
+        }).join('')}
+    </div>`;
+
+    // Position popup near the click
+    const wrapper = document.createElement('div');
+    wrapper.id = 'dayListWrapper';
+    wrapper.style.position = 'fixed';
+    wrapper.style.top = '50%';
+    wrapper.style.left = '50%';
+    wrapper.style.transform = 'translate(-50%, -50%)';
+    wrapper.style.zIndex = '200';
+    wrapper.innerHTML = html;
+    wrapper.onclick = (e) => { if(e.target === wrapper) closeDayList(); };
+
+    // Add backdrop
+    const backdrop = document.createElement('div');
+    backdrop.id = 'dayListBackdrop';
+    backdrop.style.position = 'fixed';
+    backdrop.style.top = '0';
+    backdrop.style.left = '0';
+    backdrop.style.right = '0';
+    backdrop.style.bottom = '0';
+    backdrop.style.background = 'rgba(15,23,42,0.3)';
+    backdrop.style.zIndex = '199';
+    backdrop.onclick = closeDayList;
+
+    document.body.appendChild(backdrop);
+    document.body.appendChild(wrapper);
+}
+
+function closeDayList(){
+    const wrapper = document.getElementById('dayListWrapper');
+    const backdrop = document.getElementById('dayListBackdrop');
+    if(wrapper) wrapper.remove();
+    if(backdrop) backdrop.remove();
+}
+
 function pickDate(ds){
     S.selected = new Date(ds);
     renderCalendar();
@@ -2086,6 +2286,9 @@ function loadTaskIntoForm(t){
 
     // Switch to calendar view and scroll to form
     switchView('calendar', document.querySelectorAll('.nav-tab')[1]);
+
+    // On mobile, open the task panel
+    openMobileTaskPanel();
 
     // Fill all form fields
     const fT_title = $('fT_title');
@@ -2759,13 +2962,14 @@ async function loadAll(){
     }
 
     updateStats(dash);
-    renderToday();
-    renderWeek();
-    renderDashBm();
-    renderCalendar();
-    await renderAllTasksWithRecurrence();
-    renderBookmarksPage();
-    checkSyncStatus();
+
+    try { renderToday(); } catch(e) { console.error('renderToday failed:', e); }
+    try { renderWeek(); } catch(e) { console.error('renderWeek failed:', e); }
+    try { renderDashBm(); } catch(e) { console.error('renderDashBm failed:', e); }
+    try { renderCalendar(); } catch(e) { console.error('renderCalendar failed:', e); }
+    try { await renderAllTasksWithRecurrence(); } catch(e) { console.error('renderAllTasksWithRecurrence failed:', e); }
+    try { renderBookmarksPage(); } catch(e) { console.error('renderBookmarksPage failed:', e); }
+    try { checkSyncStatus(); } catch(e) { console.error('checkSyncStatus failed:', e); }
 }
 
 /* init */
