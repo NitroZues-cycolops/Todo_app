@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import date, timedelta
 from typing import List, Optional
 
@@ -7,6 +8,8 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import case, func
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -58,6 +61,9 @@ def _auto_migrate():
                     try: conn.execute(text(sql))
                     except Exception: pass
 
+            # Existing one-day events may predate end_date being required.
+            conn.execute(text('UPDATE events SET end_date = start_date WHERE end_date IS NULL'))
+
             # TASK_OCCURRENCES: new table for tracking per-date completion
             existing_tables = insp.get_table_names()
             if 'task_occurrences' not in existing_tables:
@@ -74,6 +80,18 @@ def _auto_migrate():
                         )
                     '''))
                 except Exception: pass
+
+            # Dedupe any old duplicate overrides before enforcing one row per task/date.
+            conn.execute(text('''
+                DELETE FROM task_occurrences
+                WHERE id NOT IN (
+                    SELECT MIN(id) FROM task_occurrences GROUP BY task_id, occurrence_date
+                )
+            '''))
+            conn.execute(text('''
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_task_occurrences_task_date
+                ON task_occurrences (task_id, occurrence_date)
+            '''))
     except Exception:
         pass  # ignore migration errors (e.g. tables don't exist yet)
 
@@ -83,23 +101,29 @@ _auto_migrate()
 # ============================================================
 # Recurrence Expansion Helper
 # ============================================================
-def parse_rrule(rrule_str: str, start_date: date, end_date: date) -> List[date]:
-    """Parse RRULE string and return list of dates in range [start_date, end_date].
+def parse_rrule(
+    rrule_str: str,
+    range_start: date,
+    range_end: date,
+    anchor_date: Optional[date] = None,
+    rrule_until: Optional[date] = None,
+) -> List[date]:
+    """Parse RRULE string and return active dates in [range_start, range_end].
 
     Supported formats:
-    - FREQ=DAILY → every day
+    - FREQ=DAILY → every day from the anchor
     - FREQ=DAILY;UNTIL=YYYY-MM-DD → every day until date
     - FREQ=WEEKLY;BYDAY=MO,WE,FR → specific weekdays every week
-    - FREQ=WEEKLY → same weekday every week
+    - FREQ=WEEKLY → anchor weekday every week
     - FREQ=ALWAYS → pinned (always visible, returns all dates in range)
+
+    The task's due_date / event's start_date is the anchor. No occurrence is
+    returned before that anchor. Both the rule's UNTIL and the rrule_until
+    column are honored.
     """
     if not rrule_str:
         return []
 
-    occurrences = []
-    current = start_date
-
-    # Parse rule components
     parts = {}
     for part in rrule_str.split(';'):
         if '=' in part:
@@ -110,52 +134,60 @@ def parse_rrule(rrule_str: str, start_date: date, end_date: date) -> List[date]:
     until = parts.get('UNTIL')
     byday = parts.get('BYDAY', '')
 
-    # Parse until date if present
-    until_date = end_date
+    until_date = range_end
     if until:
         try:
-            until_date = date.fromisoformat(until)
-            until_date = min(until_date, end_date)
-        except:
-            until_date = end_date
+            until_date = min(date.fromisoformat(until), until_date)
+        except ValueError:
+            pass
+    if rrule_until:
+        until_date = min(rrule_until, until_date)
 
-    # Weekday name to number mapping (Monday=0, Sunday=6)
+    anchor = anchor_date or range_start
+    effective_start = max(range_start, anchor)
+    if effective_start > until_date:
+        return []
+
+    occurrences = []
     weekday_map = {'MO': 0, 'TU': 1, 'WE': 2, 'TH': 3, 'FR': 4, 'SA': 5, 'SU': 6}
 
     if freq == 'ALWAYS':
-        # Pinned: return all dates in range
-        current = start_date
+        current = effective_start
         while current <= until_date:
-            if current >= start_date:
-                occurrences.append(current)
+            occurrences.append(current)
             current += timedelta(days=1)
 
     elif freq == 'DAILY':
-        # Every day from start_date to until_date
-        current = start_date
+        current = effective_start
         while current <= until_date:
             occurrences.append(current)
             current += timedelta(days=1)
 
     elif freq == 'WEEKLY':
         if byday:
-            # Specific weekdays every week
-            target_days = {weekday_map.get(day.strip()): day.strip() for day in byday.split(',')}
-            current = start_date
+            target_days = {
+                weekday_map[day.strip()]
+                for day in byday.split(',')
+                if day.strip() in weekday_map
+            }
+            current = effective_start
             while current <= until_date:
                 if current.weekday() in target_days:
                     occurrences.append(current)
                 current += timedelta(days=1)
         else:
-            # Same weekday every week
-            start_weekday = start_date.weekday()
-            current = start_date
+            start_weekday = anchor.weekday()
+            current = effective_start
             while current <= until_date:
                 if current.weekday() == start_weekday:
                     occurrences.append(current)
                 current += timedelta(days=1)
 
     return occurrences
+
+
+def _is_contiguous_dates(dates: List[date]) -> bool:
+    return all((dates[i + 1] - dates[i]).days == 1 for i in range(len(dates) - 1))
 
 
 app = FastAPI(
@@ -230,8 +262,10 @@ def expand_task_recurrence(
 
     occurrences = []
     for task in recurring_tasks:
-        # Get dates this task occurs on
-        dates = parse_rrule(task.recurrence_rule, start, end)
+        # Get dates this task occurs on, anchored to its own due date.
+        dates = parse_rrule(
+            task.recurrence_rule, start, end, task.due_date, task.rrule_until
+        )
 
         for occ_date in dates:
             # Check if there's an override/exception in task_occurrences
@@ -240,13 +274,16 @@ def expand_task_recurrence(
                 models.TaskOccurrence.occurrence_date == occ_date,
             ).first()
 
+            if existing and existing.cancelled:
+                continue
+
             if existing:
                 # Use override from task_occurrences
                 occurrences.append({
                     'task_id': task.id,
                     'occurrence_date': occ_date.isoformat(),
                     'completed': existing.completed,
-                    'cancelled': existing.cancelled,
+                    'cancelled': False,
                 })
             else:
                 # Use base task completed status
@@ -307,8 +344,10 @@ def get_tasks_in_range(
     ).all()
 
     for task in recurring:
-        # Get dates this task occurs on
-        dates = parse_rrule(task.recurrence_rule, start, end)
+        # Get dates this task occurs on, anchored to its own due date.
+        dates = parse_rrule(
+            task.recurrence_rule, start, end, task.due_date, task.rrule_until
+        )
 
         for occ_date in dates:
             # Check if there's an override/exception in task_occurrences
@@ -341,6 +380,12 @@ def get_tasks_in_range(
                 })
 
     return result
+
+
+@app.get("/api/tasks/categories")
+def list_task_categories(db: Session = Depends(get_db)):
+    cats = db.query(models.Task.category).distinct().all()
+    return [c[0] for c in cats if c[0]]
 
 
 @app.get("/api/tasks/{task_id}", response_model=schemas.Task)
@@ -389,25 +434,25 @@ def toggle_task(task_id: int, occurrence_date: Optional[date] = None, db: Sessio
 
     # If this is a recurring task and an occurrence_date is provided, track per-date completion
     if db_task.recurrence_rule and occurrence_date:
-        # Find or create task_occurrence for this date
-        occ = db.query(models.TaskOccurrence).filter(
-            models.TaskOccurrence.task_id == task_id,
-            models.TaskOccurrence.occurrence_date == occurrence_date,
-        ).first()
-
-        if occ:
-            # Toggle the occurrence
-            occ.completed = not occ.completed
-            occ.cancelled = False
-        else:
-            # Create new occurrence (opposite of parent task's current state)
-            occ = models.TaskOccurrence(
-                task_id=task_id,
-                occurrence_date=occurrence_date,
-                completed=not db_task.completed,
-                cancelled=False,
-            )
-            db.add(occ)
+        # Atomic upsert: create the override or toggle the existing one.
+        stmt = sqlite_insert(models.TaskOccurrence).values(
+            task_id=task_id,
+            occurrence_date=occurrence_date,
+            completed=not db_task.completed,
+            cancelled=False,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[models.TaskOccurrence.task_id, models.TaskOccurrence.occurrence_date],
+            set_={
+                'completed': case(
+                    (models.TaskOccurrence.completed.is_(True), False),
+                    else_=True,
+                ),
+                'cancelled': False,
+                'updated_at': func.now(),
+            },
+        )
+        db.execute(stmt)
         db.commit()
     else:
         # Regular task or no occurrence_date: toggle the task itself
@@ -418,28 +463,83 @@ def toggle_task(task_id: int, occurrence_date: Optional[date] = None, db: Sessio
     return db_task
 
 
+@app.delete("/api/tasks/{task_id}/occurrence")
+def cancel_task_occurrence(
+    task_id: int,
+    occurrence_date: date = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Cancel one occurrence of a recurring task without deleting the series."""
+    db_task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if not db_task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    stmt = sqlite_insert(models.TaskOccurrence).values(
+        task_id=task_id,
+        occurrence_date=occurrence_date,
+        completed=False,
+        cancelled=True,
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[models.TaskOccurrence.task_id, models.TaskOccurrence.occurrence_date],
+        set_={
+            'completed': False,
+            'cancelled': True,
+            'updated_at': func.now(),
+        },
+    )
+    db.execute(stmt)
+    db.commit()
+    return {
+        "ok": True,
+        "task_id": task_id,
+        "occurrence_date": occurrence_date.isoformat(),
+        "cancelled": True,
+    }
+
+
 @app.delete("/api/tasks/{task_id}")
 def delete_task(task_id: int, db: Session = Depends(get_db)):
     db_task = db.query(models.Task).filter(models.Task.id == task_id).first()
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
+    db.query(models.TaskOccurrence).filter(
+        models.TaskOccurrence.task_id == task_id
+    ).delete(synchronize_session=False)
     db.delete(db_task)
     db.commit()
     return {"ok": True}
-
-
-@app.get("/api/tasks/categories")
-def list_task_categories(db: Session = Depends(get_db)):
-    cats = db.query(models.Task.category).distinct().all()
-    return [c[0] for c in cats if c[0]]
 
 
 # ============================================================
 # Bulk Tasks API
 # ============================================================
 @app.post("/api/tasks/bulk", response_model=List[schemas.Task])
-def create_tasks_bulk(tasks_list: List[schemas.TaskCreate], db: Session = Depends(get_db)):
-    """Create multiple tasks from list of task objects (AI Planner format)."""
+def create_tasks_bulk(payload: schemas.TaskBulkCreate, db: Session = Depends(get_db)):
+    """Feature 1: one task row per selected date, all sharing a backend group_id."""
+    group_id = str(uuid.uuid4())
+    base = payload.dict(exclude={'dates', 'due_date', 'group_id'})
+    if base.get('start_time'):
+        base['due_time'] = base['start_time']
+
+    created_tasks = []
+    try:
+        for due_date in payload.dates:
+            task = models.Task(**base, due_date=due_date, group_id=group_id)
+            db.add(task)
+            created_tasks.append(task)
+        db.commit()
+        for task in created_tasks:
+            db.refresh(task)
+        return created_tasks
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/tasks/batch", response_model=List[schemas.Task])
+def create_tasks_batch(tasks_list: List[schemas.TaskCreate], db: Session = Depends(get_db)):
+    """AI Planner: create multiple tasks from a list of task objects."""
     created_tasks = []
     try:
         for task_data in tasks_list:
@@ -488,6 +588,10 @@ def delete_tasks_group(group_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No tasks found for this group")
 
     try:
+        task_ids = [t.id for t in tasks]
+        db.query(models.TaskOccurrence).filter(
+            models.TaskOccurrence.task_id.in_(task_ids)
+        ).delete(synchronize_session=False)
         for t in tasks:
             db.delete(t)
         db.commit()
@@ -544,8 +648,10 @@ def expand_event_recurrence(
 
     occurrences = []
     for event in recurring_events:
-        # Get dates this event occurs on
-        dates = parse_rrule(event.recurrence_rule, start, end)
+        # Get dates this event occurs on, anchored to its own start date.
+        dates = parse_rrule(
+            event.recurrence_rule, start, end, event.start_date, event.rrule_until
+        )
 
         for occ_date in dates:
             occurrences.append({
@@ -554,6 +660,12 @@ def expand_event_recurrence(
             })
 
     return occurrences
+
+
+@app.get("/api/events/categories")
+def list_event_categories(db: Session = Depends(get_db)):
+    cats = db.query(models.Event.category).distinct().all()
+    return [c[0] for c in cats if c[0]]
 
 
 @app.get("/api/events/{event_id}", response_model=schemas.Event)
@@ -587,45 +699,79 @@ def delete_event(event_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-@app.get("/api/events/categories")
-def list_event_categories(db: Session = Depends(get_db)):
-    cats = db.query(models.Event.category).distinct().all()
-    return [c[0] for c in cats if c[0]]
-
-
 # ============================================================
 # Bulk Events API
 # ============================================================
 @app.post("/api/events/bulk", response_model=List[schemas.Event])
-def create_events_bulk(events_list: List[dict], db: Session = Depends(get_db)):
-    """Create multiple events from list of event objects (AI Planner format)."""
+def create_events_bulk(payload: schemas.EventBulkCreate, db: Session = Depends(get_db)):
+    """Feature 1: contiguous dates become one event; non-contiguous dates get a shared group_id."""
+    dates = payload.dates
+    base = payload.dict(exclude={'dates'})
+
+    if _is_contiguous_dates(dates):
+        spans = [(dates[0], dates[-1], None)]
+    else:
+        group_id = str(uuid.uuid4())
+        spans = [(d, d, group_id) for d in dates]
+
     created_events = []
     try:
-        for event_dict in events_list:
-            # Calculate end_time from duration_minutes if not provided
-            end_time = event_dict.get('end_time')
-            if not end_time and event_dict.get('start_time'):
-                # Add duration_minutes (default 60) to start_time
-                start_h, start_m = map(int, event_dict['start_time'].split(':'))
-                duration = event_dict.get('duration_minutes', 60)
-                end_mins = start_h * 60 + start_m + duration
-                end_h = (end_mins // 60) % 24
-                end_m = end_mins % 60
-                end_time = f"{end_h:02d}:{end_m:02d}"
-
-            # Build event data, excluding duration_minutes (not a model field)
-            event_dict_clean = {k: v for k, v in event_dict.items() if k != 'duration_minutes'}
-            event_dict_clean['end_time'] = end_time or "10:00"
-
-            # Create Event object
-            event_data = schemas.EventCreate(**event_dict_clean)
-            e = models.Event(**event_data.dict())
-            db.add(e)
-            created_events.append(e)
+        for start_date, end_date, group_id in spans:
+            event = models.Event(
+                **base,
+                start_date=start_date,
+                end_date=end_date,
+                group_id=group_id,
+            )
+            db.add(event)
+            created_events.append(event)
         db.commit()
-        for e in created_events:
-            db.refresh(e)
+        for event in created_events:
+            db.refresh(event)
         return created_events
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/events/batch", response_model=List[schemas.Event])
+def create_events_batch(events_list: List[schemas.EventBatchItem], db: Session = Depends(get_db)):
+    """AI Planner: create a list of events, deriving end_date/end_time when omitted."""
+    created_events = []
+    try:
+        for item in events_list:
+            data = item.dict(exclude={'duration_minutes'})
+            if not data.get('end_date'):
+                data['end_date'] = data['start_date']
+
+            if data['end_date'] < data['start_date']:
+                raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
+
+            if item.duration_minutes is not None and item.duration_minutes <= 0:
+                raise HTTPException(status_code=422, detail="duration_minutes must be greater than 0")
+
+            if not data.get('end_time') and data.get('start_time'):
+                start_h, start_m = map(int, data['start_time'].split(':'))
+                duration = item.duration_minutes if item.duration_minutes is not None else 60
+                end_mins = start_h * 60 + start_m + duration
+                if end_mins >= 24 * 60:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="event duration crosses midnight; split it or set an end_date",
+                    )
+                data['end_time'] = f"{(end_mins // 60) % 24:02d}:{end_mins % 60:02d}"
+
+            event_data = schemas.EventCreate(**data)
+            event = models.Event(**event_data.dict())
+            db.add(event)
+            created_events.append(event)
+        db.commit()
+        for event in created_events:
+            db.refresh(event)
+        return created_events
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -692,6 +838,12 @@ def list_bookmarks(
     return query.order_by(models.Bookmark.order_index.asc(), models.Bookmark.id.asc()).all()
 
 
+@app.get("/api/bookmarks/categories")
+def list_bookmark_categories(db: Session = Depends(get_db)):
+    cats = db.query(models.Bookmark.category).distinct().all()
+    return [c[0] for c in cats if c[0]]
+
+
 @app.get("/api/bookmarks/{bm_id}", response_model=schemas.Bookmark)
 def get_bookmark(bm_id: int, db: Session = Depends(get_db)):
     bm = db.query(models.Bookmark).filter(models.Bookmark.id == bm_id).first()
@@ -721,12 +873,6 @@ def delete_bookmark(bm_id: int, db: Session = Depends(get_db)):
     db.delete(db_bm)
     db.commit()
     return {"ok": True}
-
-
-@app.get("/api/bookmarks/categories")
-def list_bookmark_categories(db: Session = Depends(get_db)):
-    cats = db.query(models.Bookmark.category).distinct().all()
-    return [c[0] for c in cats if c[0]]
 
 
 # ============================================================
@@ -904,11 +1050,14 @@ async def ai_plan_endpoint(
                 existing_events=existing_events,
             )
         else:
-            # Save uploaded file temporarily
+            # Save uploaded file temporarily, preserving its original suffix so
+            # parse_file() can identify CSV/XLSX/PDF/text correctly.
             import tempfile
             from pathlib import Path
 
-            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            original_name = getattr(uploaded_file, 'filename', '') or ''
+            suffix = Path(original_name).suffix
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 content = await uploaded_file.read()
                 tmp.write(content)
                 tmp_path = tmp.name

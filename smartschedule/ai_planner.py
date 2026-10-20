@@ -120,9 +120,7 @@ class AIPlanner:
         Note: Current Groq models don't support vision. Return helpful message.
         """
         raise GroqAIError(
-            "Image analysis is not available with current Groq models. "
-            "Please use text input instead. "
-            "You can extract text from images using OCR tools first."
+            "Image timetables aren't supported yet. Upload PDF/CSV/XLSX/text."
         )
 
     def _build_planning_prompt(

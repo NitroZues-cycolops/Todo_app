@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator, model_validator
-from typing import Optional, Generic, TypeVar
+from typing import List, Optional, Generic, TypeVar
 from datetime import date, datetime
 
 
@@ -32,8 +32,34 @@ class TaskBase(BaseModel):
     recurrence_rule: Optional[str] = None
     rrule_until: Optional[date] = None
 
+    @field_validator('title')
+    @classmethod
+    def title_not_blank(cls, value: str) -> str:
+        value = (value or '').strip()
+        if not value:
+            raise ValueError('title is required')
+        return value
+
 
 class TaskCreate(TaskBase):
+    @model_validator(mode='after')
+    def validate_times(self):
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValueError('end_time must be after start_time')
+        return self
+
+
+class TaskBulkCreate(TaskBase):
+    dates: List[date]
+
+    @field_validator('dates')
+    @classmethod
+    def dates_required_unique(cls, value: List[date]) -> List[date]:
+        dates = sorted(set(value))
+        if not dates:
+            raise ValueError('at least one date is required')
+        return dates
+
     @model_validator(mode='after')
     def validate_times(self):
         if self.start_time and self.end_time and self.end_time <= self.start_time:
@@ -86,9 +112,77 @@ class EventBase(BaseModel):
     recurrence_rule: Optional[str] = None
     rrule_until: Optional[date] = None
 
+    @field_validator('title')
+    @classmethod
+    def title_not_blank(cls, value: str) -> str:
+        value = (value or '').strip()
+        if not value:
+            raise ValueError('title is required')
+        return value
+
+    @model_validator(mode='after')
+    def validate_dates_times(self):
+        if self.end_date and self.end_date < self.start_date:
+            raise ValueError('end_date must be on or after start_date')
+        same_day = self.end_date is None or self.end_date == self.start_date
+        if same_day and not self.all_day and self.start_time and self.end_time:
+            if self.end_time <= self.start_time:
+                raise ValueError('end_time must be after start_time')
+        return self
+
 
 class EventCreate(EventBase):
     pass
+
+
+class EventBulkCreate(BaseModel):
+    dates: List[date]
+    title: str
+    description: Optional[str] = ""
+    start_time: Optional[str] = "09:00"
+    end_time: Optional[str] = "10:00"
+    all_day: Optional[bool] = False
+    location: Optional[str] = ""
+    color: Optional[str] = "#4772fa"
+    category: Optional[str] = "General"
+    url: Optional[str] = ""
+    video_url: Optional[str] = ""
+    recurrence_rule: Optional[str] = None
+    rrule_until: Optional[date] = None
+
+    @field_validator('title')
+    @classmethod
+    def title_not_blank(cls, value: str) -> str:
+        value = (value or '').strip()
+        if not value:
+            raise ValueError('title is required')
+        return value
+
+    @field_validator('dates')
+    @classmethod
+    def dates_required_unique(cls, value: List[date]) -> List[date]:
+        dates = sorted(set(value))
+        if not dates:
+            raise ValueError('at least one date is required')
+        return dates
+
+    @model_validator(mode='after')
+    def validate_times(self):
+        if not self.all_day and self.start_time and self.end_time:
+            if self.end_time <= self.start_time:
+                raise ValueError('end_time must be after start_time')
+        return self
+
+
+class EventBatchItem(EventBase):
+    end_time: Optional[str] = None
+    duration_minutes: Optional[int] = None
+
+    @model_validator(mode='after')
+    def validate_duration(self):
+        if self.duration_minutes is not None and self.duration_minutes <= 0:
+            raise ValueError('duration_minutes must be greater than 0')
+        return self
 
 
 class EventUpdate(BaseModel):

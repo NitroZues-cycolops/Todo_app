@@ -4,6 +4,7 @@ Supports PDF and image file extraction.
 """
 
 import base64
+import csv
 import mimetypes
 from pathlib import Path
 from typing import Optional, Tuple
@@ -17,6 +18,11 @@ try:
     import pdfplumber
 except ImportError:
     pdfplumber = None
+
+try:
+    import openpyxl
+except ImportError:
+    openpyxl = None
 
 
 class FileParseError(Exception):
@@ -50,24 +56,67 @@ def parse_file(file_path: str) -> Tuple[str, str]:
         raise FileParseError(f"File exceeds 10MB limit ({file_size_mb:.1f}MB)")
 
     mime_type, _ = mimetypes.guess_type(str(path))
+    suffix = path.suffix.lower()
 
     # PDF files
-    if mime_type == "application/pdf" or str(path).lower().endswith(".pdf"):
+    if mime_type == "application/pdf" or suffix == ".pdf":
         return _parse_pdf(file_path), "pdf"
 
-    # Image files
+    # Spreadsheets (CSV/TSV/XLSX)
+    if suffix in (".csv", ".tsv") or mime_type in ("text/csv", "text/tab-separated-values"):
+        return _parse_csv(file_path), "text"
+    if suffix == ".xlsx" or mime_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+        return _parse_xlsx(file_path), "text"
+
+    # Images are intentionally not accepted until vision is implemented.
     if mime_type and mime_type.startswith("image/"):
-        return _parse_image(file_path), "image"
+        raise FileParseError(
+            "Image timetables aren't supported yet. Upload PDF/CSV/XLSX/text."
+        )
 
     # Plain text files
-    if mime_type in ("text/plain", "text/markdown") or str(path).lower().endswith((".txt", ".md")):
+    if mime_type in ("text/plain", "text/markdown") or suffix in (".txt", ".md"):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 return f.read(), "text"
         except Exception as e:
             raise FileParseError(f"Failed to read text file: {e}")
 
-    raise FileParseError(f"Unsupported file type: {mime_type}")
+    raise FileParseError(f"Unsupported file type: {mime_type or suffix or 'unknown'}")
+
+
+def _parse_csv(file_path: str) -> str:
+    """Extract rows from CSV/TSV as tab-separated text."""
+    try:
+        delimiter = "\t" if Path(file_path).suffix.lower() == ".tsv" else ","
+        with open(file_path, "r", encoding="utf-8-sig", newline="") as f:
+            rows = csv.reader(f, delimiter=delimiter)
+            lines = []
+            for row in rows:
+                cells = [cell.strip() for cell in row]
+                if any(cells):
+                    lines.append("\t".join(cells))
+            return "\n".join(lines)
+    except Exception as e:
+        raise FileParseError(f"Failed to read CSV file: {e}")
+
+
+def _parse_xlsx(file_path: str) -> str:
+    """Extract cell values from an XLSX workbook."""
+    if openpyxl is None:
+        raise FileParseError("XLSX parsing not available (install openpyxl)")
+    try:
+        workbook = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        lines = []
+        for sheet in workbook.worksheets:
+            for row in sheet.iter_rows(values_only=True):
+                cells = [str(cell).strip() for cell in row if cell is not None and str(cell).strip()]
+                if cells:
+                    lines.append("\t".join(cells))
+        workbook.close()
+        return "\n".join(lines)
+    except Exception as e:
+        raise FileParseError(f"Failed to read XLSX file: {e}")
 
 
 def _parse_pdf(file_path: str) -> str:
