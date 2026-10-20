@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -48,6 +48,16 @@ def _auto_migrate():
                     try: conn.execute(text(sql))
                     except Exception: pass
 
+            # A recurring task needs an anchor date. Backfill old NULL anchors from
+            # the task's creation date so the series does not silently vanish.
+            conn.execute(text('''
+                UPDATE tasks
+                SET due_date = COALESCE(DATE(created_at), :today)
+                WHERE due_date IS NULL
+                  AND recurrence_rule IS NOT NULL
+                  AND TRIM(recurrence_rule) <> ''
+            '''), {"today": date.today().isoformat()})
+
             # EVENTS: url, video_url, group_id, recurrence_rule, rrule_until
             existing_events = {c['name'] for c in insp.get_columns('events')}
             for col, sql in [
@@ -80,6 +90,19 @@ def _auto_migrate():
                         )
                     '''))
                 except Exception: pass
+
+            # TASK_OCCURRENCES: per-occurrence edit overrides (Round B)
+            existing_occ = {c['name'] for c in inspect(engine).get_columns('task_occurrences')}
+            for col, sql in [
+                ('override_title', 'ALTER TABLE task_occurrences ADD COLUMN override_title VARCHAR(500) DEFAULT NULL'),
+                ('override_description', 'ALTER TABLE task_occurrences ADD COLUMN override_description TEXT DEFAULT NULL'),
+                ('override_start_time', 'ALTER TABLE task_occurrences ADD COLUMN override_start_time VARCHAR(10) DEFAULT NULL'),
+                ('override_end_time', 'ALTER TABLE task_occurrences ADD COLUMN override_end_time VARCHAR(10) DEFAULT NULL'),
+                ('override_color', 'ALTER TABLE task_occurrences ADD COLUMN override_color VARCHAR(20) DEFAULT NULL'),
+            ]:
+                if col not in existing_occ:
+                    try: conn.execute(text(sql))
+                    except Exception: pass
 
             # Dedupe any old duplicate overrides before enforcing one row per task/date.
             conn.execute(text('''
@@ -190,6 +213,141 @@ def _is_contiguous_dates(dates: List[date]) -> bool:
     return all((dates[i + 1] - dates[i]).days == 1 for i in range(len(dates) - 1))
 
 
+def _task_payload(task: models.Task, due_date: date, completed: bool,
+                  occ: Optional[models.TaskOccurrence] = None) -> dict:
+    """Serialize a task occurrence with any per-date overrides applied."""
+    data = {
+        field: getattr(task, field)
+        for field in schemas.Task.model_fields
+        if hasattr(task, field)
+    }
+    title = occ.override_title if occ and occ.override_title is not None else task.title
+    description = (
+        occ.override_description
+        if occ and occ.override_description is not None
+        else task.description
+    )
+    start_time = (
+        occ.override_start_time
+        if occ and occ.override_start_time is not None
+        else task.start_time
+    )
+    end_time = (
+        occ.override_end_time
+        if occ and occ.override_end_time is not None
+        else task.end_time
+    )
+    color = occ.override_color if occ and occ.override_color is not None else task.color
+
+    data.update({
+        'title': title,
+        'description': description or '',
+        'due_date': due_date,
+        'due_time': start_time or None,
+        'start_time': start_time,
+        'end_time': end_time,
+        'color': color or '',
+        'completed': completed,
+        'occurrence_date': due_date,
+    })
+    return data
+
+
+def _expand_tasks_for_range(db: Session, start: date, end: date) -> List[dict]:
+    """Return normal tasks and recurring occurrences for [start, end]."""
+    rows: List[dict] = []
+
+    non_recurring = db.query(models.Task).filter(
+        models.Task.recurrence_rule.is_(None),
+        models.Task.due_date >= start,
+        models.Task.due_date <= end,
+    ).all()
+    for task in non_recurring:
+        rows.append(_task_payload(task, task.due_date, bool(task.completed)))
+
+    recurring = db.query(models.Task).filter(
+        models.Task.recurrence_rule.isnot(None)
+    ).all()
+    task_ids = [task.id for task in recurring]
+    occ_map = {}
+    if task_ids:
+        stored = db.query(models.TaskOccurrence).filter(
+            models.TaskOccurrence.task_id.in_(task_ids),
+            models.TaskOccurrence.occurrence_date >= start,
+            models.TaskOccurrence.occurrence_date <= end,
+        ).all()
+        occ_map = {(o.task_id, o.occurrence_date): o for o in stored}
+
+    for task in recurring:
+        dates = parse_rrule(
+            task.recurrence_rule, start, end, task.due_date, task.rrule_until
+        )
+        for occ_date in dates:
+            occ = occ_map.get((task.id, occ_date))
+            if occ and occ.cancelled:
+                continue
+            completed = bool(occ.completed) if occ else bool(task.completed)
+            rows.append(_task_payload(task, occ_date, completed, occ))
+
+    rows.sort(key=lambda r: (
+        r['due_date'],
+        r.get('start_time') or '99:99',
+        (r.get('title') or '').lower(),
+        r['id'],
+    ))
+    return rows
+
+
+def _event_payload(event: models.Event, occurrence_date: date) -> dict:
+    """Serialize an event occurrence, shifting a multi-day end date with it."""
+    data = {
+        field: getattr(event, field)
+        for field in schemas.Event.model_fields
+        if hasattr(event, field)
+    }
+    shift = timedelta(days=0)
+    if event.end_date:
+        shift = event.end_date - event.start_date
+    data['start_date'] = occurrence_date
+    data['end_date'] = occurrence_date + shift
+    return data
+
+
+def _expand_events_for_range(db: Session, start: date, end: date) -> List[dict]:
+    """Return overlapping normal events and recurring event occurrences."""
+    rows: List[dict] = []
+
+    non_recurring = db.query(models.Event).filter(
+        models.Event.recurrence_rule.is_(None),
+        models.Event.start_date <= end,
+        or_(
+            models.Event.end_date >= start,
+            models.Event.end_date.is_(None),
+            models.Event.start_date >= start,
+        ),
+    ).all()
+    for event in non_recurring:
+        rows.append(_event_payload(event, event.start_date))
+
+    recurring = db.query(models.Event).filter(
+        models.Event.recurrence_rule.isnot(None)
+    ).all()
+    for event in recurring:
+        dates = parse_rrule(
+            event.recurrence_rule, start, end, event.start_date, event.rrule_until
+        )
+        for occ_date in dates:
+            rows.append(_event_payload(event, occ_date))
+
+    rows.sort(key=lambda r: (
+        r['start_date'],
+        r.get('start_time') or '',
+        (r.get('title') or '').lower(),
+        r['id'],
+    ))
+    return rows
+
+
 app = FastAPI(
     title="SmartSchedule",
     description="SmartSchedule: Personal task manager, calendar scheduler, and hyper tile dashboard",
@@ -253,47 +411,22 @@ def expand_task_recurrence(
     end: date = Query(...),
     db: Session = Depends(get_db),
 ):
-    """Expand all recurring tasks to their occurrences in the given date range.
-
-    Returns list of {task_id, occurrence_date, completed, cancelled} objects.
-    """
-    # Get all tasks with recurrence rules
-    recurring_tasks = db.query(models.Task).filter(models.Task.recurrence_rule.isnot(None)).all()
-
+    """Expand recurring tasks, including per-occurrence overrides and cancellations."""
     occurrences = []
-    for task in recurring_tasks:
-        # Get dates this task occurs on, anchored to its own due date.
-        dates = parse_rrule(
-            task.recurrence_rule, start, end, task.due_date, task.rrule_until
-        )
-
-        for occ_date in dates:
-            # Check if there's an override/exception in task_occurrences
-            existing = db.query(models.TaskOccurrence).filter(
-                models.TaskOccurrence.task_id == task.id,
-                models.TaskOccurrence.occurrence_date == occ_date,
-            ).first()
-
-            if existing and existing.cancelled:
-                continue
-
-            if existing:
-                # Use override from task_occurrences
-                occurrences.append({
-                    'task_id': task.id,
-                    'occurrence_date': occ_date.isoformat(),
-                    'completed': existing.completed,
-                    'cancelled': False,
-                })
-            else:
-                # Use base task completed status
-                occurrences.append({
-                    'task_id': task.id,
-                    'occurrence_date': occ_date.isoformat(),
-                    'completed': task.completed,
-                    'cancelled': False,
-                })
-
+    for row in _expand_tasks_for_range(db, start, end):
+        if not row.get('recurrence_rule'):
+            continue
+        occurrences.append({
+            'task_id': row['id'],
+            'occurrence_date': row['due_date'].isoformat(),
+            'completed': row['completed'],
+            'cancelled': False,
+            'title': row['title'],
+            'description': row['description'],
+            'start_time': row['start_time'],
+            'end_time': row['end_time'],
+            'color': row['color'],
+        })
     return occurrences
 
 
@@ -303,82 +436,14 @@ def get_tasks_in_range(
     end: date = Query(...),
     db: Session = Depends(get_db),
 ):
-    """Get all tasks (including expanded recurring) in date range with their times.
-
-    Returns task objects with expanded occurrences for calendar rendering.
-    Non-recurring tasks appear once on their due_date.
-    Recurring tasks are expanded to all occurrences in range.
-    """
+    """Get normal tasks and expanded occurrences in range for calendar rendering."""
     result = []
-
-    # Get non-recurring tasks in range
-    non_recurring = db.query(models.Task).filter(
-        models.Task.recurrence_rule.is_(None),
-        models.Task.due_date >= start,
-        models.Task.due_date <= end,
-    ).all()
-
-    for task in non_recurring:
-        result.append({
-            'id': task.id,
-            'title': task.title,
-            'description': task.description,
-            'due_date': task.due_date.isoformat() if task.due_date else None,
-            'start_time': task.start_time,
-            'end_time': task.end_time,
-            'priority': task.priority,
-            'category': task.category,
-            'color': task.color,
-            'completed': task.completed,
-            'url': task.url,
-            'video_url': task.video_url,
-            'recurrence_rule': task.recurrence_rule,
-            'group_id': task.group_id,
-            'type': 'task',
-            'occurrence_date': task.due_date.isoformat() if task.due_date else None,
-        })
-
-    # Get recurring tasks and expand them
-    recurring = db.query(models.Task).filter(
-        models.Task.recurrence_rule.isnot(None),
-    ).all()
-
-    for task in recurring:
-        # Get dates this task occurs on, anchored to its own due date.
-        dates = parse_rrule(
-            task.recurrence_rule, start, end, task.due_date, task.rrule_until
-        )
-
-        for occ_date in dates:
-            # Check if there's an override/exception in task_occurrences
-            occ = db.query(models.TaskOccurrence).filter(
-                models.TaskOccurrence.task_id == task.id,
-                models.TaskOccurrence.occurrence_date == occ_date,
-            ).first()
-
-            is_completed = occ.completed if occ else task.completed
-            is_cancelled = occ.cancelled if occ else False
-
-            if not is_cancelled:
-                result.append({
-                    'id': task.id,
-                    'title': task.title,
-                    'description': task.description,
-                    'due_date': occ_date.isoformat(),
-                    'start_time': task.start_time,
-                    'end_time': task.end_time,
-                    'priority': task.priority,
-                    'category': task.category,
-                    'color': task.color,
-                    'completed': is_completed,
-                    'url': task.url,
-                    'video_url': task.video_url,
-                    'recurrence_rule': task.recurrence_rule,
-                    'group_id': task.group_id,
-                    'type': 'task',
-                    'occurrence_date': occ_date.isoformat(),
-                })
-
+    for row in _expand_tasks_for_range(db, start, end):
+        row = dict(row)
+        row['due_date'] = row['due_date'].isoformat() if row['due_date'] else None
+        row['occurrence_date'] = row['due_date']
+        row['type'] = 'task'
+        result.append(row)
     return result
 
 
@@ -402,6 +467,13 @@ def update_task(task_id: int, task: schemas.TaskUpdate, db: Session = Depends(ge
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
     update_data = task.dict(exclude_unset=True)
+
+    # A repeating task needs an anchor date. Validate against the merged result
+    # so a partial update cannot leave the series without a due date.
+    merged_recurrence = update_data.get('recurrence_rule', db_task.recurrence_rule)
+    merged_due_date = update_data.get('due_date', db_task.due_date)
+    if merged_recurrence and not merged_due_date:
+        raise HTTPException(status_code=422, detail="A repeating task needs a due date")
 
     # Validate time constraints on merged values (use start_time || due_time for start)
     merged_start = update_data.get('start_time', db_task.start_time or db_task.due_time)
@@ -432,8 +504,13 @@ def toggle_task(task_id: int, occurrence_date: Optional[date] = None, db: Sessio
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # If this is a recurring task and an occurrence_date is provided, track per-date completion
-    if db_task.recurrence_rule and occurrence_date:
+    # Recurring completion is always per-occurrence; never toggle the master.
+    if db_task.recurrence_rule:
+        if not occurrence_date:
+            raise HTTPException(
+                status_code=422,
+                detail="occurrence_date is required for a recurring task",
+            )
         # Atomic upsert: create the override or toggle the existing one.
         stmt = sqlite_insert(models.TaskOccurrence).values(
             task_id=task_id,
@@ -455,12 +532,91 @@ def toggle_task(task_id: int, occurrence_date: Optional[date] = None, db: Sessio
         db.execute(stmt)
         db.commit()
     else:
-        # Regular task or no occurrence_date: toggle the task itself
+        # Regular task: toggle the task itself
         db_task.completed = not db_task.completed
         db.commit()
 
     db.refresh(db_task)
     return db_task
+
+
+@app.put("/api/tasks/{task_id}/occurrence/{occurrence_date}")
+def update_task_occurrence(
+    task_id: int,
+    occurrence_date: date,
+    override: schemas.TaskOccurrenceUpdate,
+    db: Session = Depends(get_db),
+):
+    """Edit one occurrence only, leaving the recurring master untouched."""
+    db_task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if not db_task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not db_task.recurrence_rule:
+        raise HTTPException(status_code=422, detail="This is not a recurring task")
+    if not db_task.due_date:
+        raise HTTPException(status_code=422, detail="A repeating task needs a due date")
+    if not parse_rrule(
+        db_task.recurrence_rule, occurrence_date, occurrence_date,
+        db_task.due_date, db_task.rrule_until,
+    ):
+        raise HTTPException(status_code=422, detail="That date is not an occurrence of this task")
+
+    existing = db.query(models.TaskOccurrence).filter(
+        models.TaskOccurrence.task_id == task_id,
+        models.TaskOccurrence.occurrence_date == occurrence_date,
+    ).first()
+    update_data = override.dict(exclude_unset=True)
+
+    merged_start = update_data.get(
+        'start_time',
+        existing.override_start_time if existing and existing.override_start_time is not None else db_task.start_time,
+    )
+    merged_end = update_data.get(
+        'end_time',
+        existing.override_end_time if existing and existing.override_end_time is not None else db_task.end_time,
+    )
+    if merged_start and merged_end and merged_end <= merged_start:
+        raise HTTPException(status_code=422, detail="end_time must be after start_time")
+
+    field_map = {
+        'title': 'override_title',
+        'description': 'override_description',
+        'start_time': 'override_start_time',
+        'end_time': 'override_end_time',
+        'color': 'override_color',
+    }
+    insert_values = {
+        'task_id': task_id,
+        'occurrence_date': occurrence_date,
+        'completed': db_task.completed,
+        'cancelled': False,
+    }
+    for source, target in field_map.items():
+        insert_values[target] = update_data.get(source)
+    if 'completed' in update_data:
+        insert_values['completed'] = update_data['completed']
+
+    stmt = sqlite_insert(models.TaskOccurrence).values(**insert_values)
+    update_values = {
+        field_map[source]: value
+        for source, value in update_data.items()
+        if source in field_map
+    }
+    if 'completed' in update_data:
+        update_values['completed'] = update_data['completed']
+    update_values['updated_at'] = func.now()
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[models.TaskOccurrence.task_id, models.TaskOccurrence.occurrence_date],
+        set_=update_values,
+    )
+    db.execute(stmt)
+    db.commit()
+
+    saved = db.query(models.TaskOccurrence).filter(
+        models.TaskOccurrence.task_id == task_id,
+        models.TaskOccurrence.occurrence_date == occurrence_date,
+    ).one()
+    return _task_payload(db_task, occurrence_date, bool(saved.completed), saved)
 
 
 @app.delete("/api/tasks/{task_id}/occurrence")
@@ -624,9 +780,15 @@ def list_events(
 ):
     query = db.query(models.Event)
     if start:
-        query = query.filter((models.Event.end_date >= start) | (models.Event.start_date >= start))
+        query = query.filter(or_(
+            (models.Event.end_date >= start) | (models.Event.start_date >= start),
+            models.Event.recurrence_rule.isnot(None),
+        ))
     if end:
-        query = query.filter(models.Event.start_date <= end)
+        query = query.filter(or_(
+            models.Event.start_date <= end,
+            models.Event.recurrence_rule.isnot(None),
+        ))
     if category:
         query = query.filter(models.Event.category == category)
     return query.order_by(models.Event.start_date.asc(), models.Event.start_time.asc()).all()
@@ -883,22 +1045,26 @@ def dashboard(db: Session = Depends(get_db)):
     today = date.today()
     week_end = today + timedelta(days=7)
 
-    total_tasks = db.query(models.Task).count()
-    completed_tasks = db.query(models.Task).filter(models.Task.completed == True).count()
-    pending_tasks = total_tasks - completed_tasks
-    today_tasks = db.query(models.Task).filter(models.Task.due_date == today).all()
-    week_tasks = db.query(models.Task).filter(
-        models.Task.due_date >= today, models.Task.due_date <= week_end
-    ).all()
+    week_tasks = _expand_tasks_for_range(db, today, week_end)
+    today_tasks = [t for t in week_tasks if t.get('due_date') == today]
+    week_events = _expand_events_for_range(db, today, week_end)
+    today_events = [
+        e for e in _expand_events_for_range(db, today, today)
+        if e.get('start_date') <= today <= (e.get('end_date') or e.get('start_date'))
+    ]
 
-    today_events = db.query(models.Event).filter(
-        (models.Event.start_date <= today) &
-        ((models.Event.end_date >= today) | (models.Event.start_date == today))
+    # Pending/Completed use per-occurrence completion. Non-recurring tasks are
+    # counted once; recurring series contribute their next 8 days of occurrences.
+    non_recurring = db.query(models.Task).filter(
+        models.Task.recurrence_rule.is_(None)
     ).all()
-    week_events = db.query(models.Event).filter(
-        models.Event.start_date <= week_end,
-        (models.Event.end_date >= today) | (models.Event.start_date >= today)
-    ).all()
+    recurring_window = [t for t in week_tasks if t.get('recurrence_rule')]
+    total_tasks = len(non_recurring) + len(recurring_window)
+    completed_tasks = (
+        sum(1 for t in non_recurring if t.completed)
+        + sum(1 for t in recurring_window if t.get('completed'))
+    )
+    pending_tasks = total_tasks - completed_tasks
 
     bookmarks = db.query(models.Bookmark).order_by(models.Bookmark.order_index.asc()).all()
 
@@ -912,10 +1078,10 @@ def dashboard(db: Session = Depends(get_db)):
             "week_events": len(week_events),
             "bookmarks": len(bookmarks),
         },
-        "today_tasks": [schemas.Task.from_orm(t) for t in today_tasks],
-        "today_events": [schemas.Event.from_orm(e) for e in today_events],
-        "week_tasks": [schemas.Task.from_orm(t) for t in week_tasks],
-        "week_events": [schemas.Event.from_orm(e) for e in week_events],
+        "today_tasks": today_tasks,
+        "today_events": today_events,
+        "week_tasks": week_tasks,
+        "week_events": week_events,
         "bookmarks": [schemas.Bookmark.from_orm(b) for b in bookmarks],
         "today": today.isoformat(),
     }

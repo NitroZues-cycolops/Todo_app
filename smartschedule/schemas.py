@@ -46,6 +46,8 @@ class TaskCreate(TaskBase):
     def validate_times(self):
         if self.start_time and self.end_time and self.end_time <= self.start_time:
             raise ValueError('end_time must be after start_time')
+        if self.recurrence_rule and not self.due_date:
+            raise ValueError('A repeating task needs a due date')
         return self
 
 
@@ -83,6 +85,31 @@ class TaskUpdate(BaseModel):
     group_id: Optional[str] = None
     recurrence_rule: Optional[str] = None
     rrule_until: Optional[date] = None
+
+    @model_validator(mode='after')
+    def validate_times(self):
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValueError('end_time must be after start_time')
+        return self
+
+
+class TaskOccurrenceUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    color: Optional[str] = None
+    completed: Optional[bool] = None
+
+    @field_validator('title')
+    @classmethod
+    def title_not_blank(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        value = value.strip()
+        if not value:
+            raise ValueError('title is required')
+        return value
 
     @model_validator(mode='after')
     def validate_times(self):

@@ -1232,6 +1232,7 @@
                             <label for="multiSelectToggle" style="margin: 0;">Select Multiple</label>
                         </div>
                         <button class="btn btn-sm" onclick="goToday()">Today</button>
+                        <button class="btn btn-sm btn-primary" id="multiCreateBtn" style="display:none;" onclick="showMultiSelectPopover()">＋ Create for <span id="multiCount">0</span> dates</button>
                         <button class="btn btn-sm btn-primary" id="mobileTaskBtn" onclick="toggleMobileTaskPanel()">+ Task</button>
                     </div>
                 </div>
@@ -1272,7 +1273,8 @@
                         <div class="form-grid" style="margin-bottom:12px;">
                             <div class="form-col">
                                 <label class="form-label">Due Date</label>
-                                <input id="fT_date" type="date">
+                                <input id="fT_date" type="date" onchange="validateTaskRepeatDate()">
+                                <div id="fT_date_error" style="display:none; color:#dc2626; font-size:12px; margin-top:4px;">A repeating task needs a due date.</div>
                             </div>
                         </div>
                         <div class="form-grid" style="margin-bottom:12px;">
@@ -1287,7 +1289,7 @@
                         </div>
                         <div class="form-col" style="margin-bottom:12px;">
                             <label class="form-label">🔄 Repeat</label>
-                            <select id="fT_repeat" onchange="updateRepeatUI()">
+                            <select id="fT_repeat" onchange="updateRepeatUI(); validateTaskRepeatDate()">
                                 <option value="">Never</option>
                                 <option value="FREQ=DAILY">Every day</option>
                                 <option value="FREQ=WEEKLY;BYDAY=custom">Selected weekdays</option>
@@ -1374,9 +1376,14 @@
 <script>
 /* ========= STATE ========= */
 const S = {
-    tasks: [], events: [], bookmarks: [],
+    tasks: [], events: [], bookmarks: [], dashboard: null,
+    expandedTasks: [], expandedEvents: [],
+    calendarCache: new Map(),  // visible-range cache: "start|end" -> {tasks, events, at}
+    taskRangeCache: new Map(), // task list cache: "start|end" -> {rows, at}
     cursor: new Date(), selected: new Date(), view: 'month',
     editTaskId: null,
+    editTaskScope: 'all',
+    editTaskOccurrenceDate: null,
     selectedDates: [],        // array of date strings (YYYY-MM-DD) for multi-select
     dragStart: null,          // date string when drag begins
     isSelecting: false,       // true during mouse drag
@@ -1497,7 +1504,7 @@ function switchView(name, btn){
     btn.classList.add('active');
     $('view-'+name).classList.add('active');
     if(name==='calendar') {
-        renderCalendar();
+        refreshCalendar();
         renderAllTasksWithRecurrence();  // Also render task list when showing calendar
     }
     if(name==='bookmarks') renderBookmarksPage();
@@ -1575,10 +1582,17 @@ function taskChips(t){
 function renderTaskCard(t, compact){
     const col = t.color || pickColor(t.priority);
     const col2 = color2(col);
-    // For recurring tasks, pass the occurrence_date to toggleTask
-    const toggleCall = t.recurrence_rule ? `toggleTaskOccurrence(${t.id}, '${t.due_date}')` : `toggleTask(${t.id})`;
+    // The checkbox and edit dialog always target the date shown on this row.
+    const shownDate = t.occurrence_date || t.due_date || null;
+    const occurrenceArg = shownDate ? `'${shownDate}'` : 'null';
+    const editCall = `openTaskModal(${t.id}, null, ${occurrenceArg})`;
+    const toggleCall = t.recurrence_rule
+        ? (t.occurrence_date
+            ? `toggleTaskOccurrence(${t.id}, '${t.occurrence_date}')`
+            : `toast('This repeating task needs a due date','err')`)
+        : `toggleTask(${t.id})`;
     return `
-        <div class="card-item ${t.completed?'done':''}" style="--ci-c:${col}; ${t.completed?'opacity:0.6; text-decoration:line-through;':''}" onclick="openTaskModal(${t.id})">
+        <div class="card-item ${t.completed?'done':''}" style="--ci-c:${col}; ${t.completed?'opacity:0.6; text-decoration:line-through;':''}" onclick="${editCall}">
             <div class="check ${t.completed?'on':''}" onclick="event.stopPropagation(); ${toggleCall}">${t.completed?'✓':''}</div>
             <div class="ci-body">
                 <div class="ci-title">${escapeHtml(t.title)}</div>
@@ -1586,8 +1600,8 @@ function renderTaskCard(t, compact){
                 <div class="ci-meta">${taskChips(t)}</div>
             </div>
             <div class="ci-actions">
-                <button class="ci-btn" onclick="event.stopPropagation(); openTaskModal(${t.id})" title="Edit">✏️</button>
-                <button class="ci-btn del" onclick="event.stopPropagation(); delTask(${t.id})" title="Delete">🗑</button>
+                <button class="ci-btn" onclick="event.stopPropagation(); ${editCall}" title="Edit">✏️</button>
+                <button class="ci-btn del" onclick="event.stopPropagation(); delTask(${t.id}, ${occurrenceArg})" title="Delete">🗑</button>
             </div>
         </div>`;
 }
@@ -1638,33 +1652,23 @@ function renderDayList(target, items, dayStr) {
 
 /* ========= TODAY / WEEK / SELECTED ========= */
 function renderToday(){
-    const t = fmtDate(new Date());
-    const evs = S.events.filter(e=>{const s=e.start_date, en=e.end_date||e.start_date; return t>=s && t<=en;})
+    const d = S.dashboard || {};
+    const evs = (d.today_events || []).slice()
         .sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''));
-    const ts = S.tasks.filter(x=>x.due_date===t).sort((a,b)=>pickColor(b.priority).localeCompare(pickColor(a.priority)));
+    const ts = (d.today_tasks || []).slice();
     renderDayList('todayList', [...evs, ...ts], 'Today');
 }
 
 function renderWeek(){
-    const today = new Date(); today.setHours(0,0,0,0);
-    const end = new Date(today); end.setDate(end.getDate()+7);
-    const evs = S.events.filter(e=>{const s=new Date(e.start_date), en=new Date(e.end_date||e.start_date); return s<=end && en>=today;})
+    const d = S.dashboard || {};
+    const evs = (d.week_events || []).slice()
         .sort((a,b)=>(a.start_date+(a.start_time||'')).localeCompare(b.start_date+(b.start_time||'')));
-    if(!evs.length){ $('weekList').innerHTML=`<div class="empty"><div class="big">🗓</div>No events in the next 7 days.</div>`; return; }
-    $('weekList').innerHTML = `<div class="list-group">${evs.map(e=>{
-        const col = e.color||'#6366f1';
-        return `
-        <div class="card-item" style="--ci-c:${col};" onclick="openEventModal(${e.id})">
-            <div style="text-align:center; padding:6px 0; min-width:52px; border-radius:10px; background:linear-gradient(135deg,${col},${color2(col)}); color:white; flex-shrink:0;">
-                <div style="font-size:10px; font-weight:600; text-transform:uppercase; opacity:0.85;">${new Date(e.start_date).toLocaleString('en-US',{month:'short'})}</div>
-                <div style="font-size:20px; font-weight:700; line-height:1;">${new Date(e.start_date).getDate()}</div>
-            </div>
-            <div class="ci-body">
-                <div class="ci-title">${escapeHtml(e.title)}</div>
-                <div class="ci-meta">${eventChips(e)}</div>
-            </div>
-        </div>`;
-    }).join('')}</div>`;
+    const ts = (d.week_tasks || []).slice();
+    if(!evs.length && !ts.length){
+        $('weekList').innerHTML=`<div class="empty"><div class="big">🗓</div>Nothing planned in the next 7 days.</div>`;
+        return;
+    }
+    renderDayList('weekList', [...evs, ...ts], 'the next 7 days');
 }
 
 
@@ -1708,34 +1712,63 @@ function getTaskListRange(filter, today){
 async function renderAllTasksWithRecurrence(){
     const filter = $('taskFilter').value;
     const today = new Date();
+    const todayStr = fmtDate(today);
 
-    // Always render master tasks (S.tasks), never expanded occurrence rows.
-    let list = S.tasks.map(t => ({...t, occurrenceNote: ''}));
-    const range = getTaskListRange(filter, today);
-
-    if(range){
-        const expanded = await getTasksForDateRange(range.start, range.end);
-        const occurrenceCounts = new Map();
-        for(const t of expanded){
-            occurrenceCounts.set(t.id, (occurrenceCounts.get(t.id) || 0) + 1);
-        }
-
-        const startStr = fmtDate(range.start);
-        const endStr = fmtDate(range.end);
-        list = list.filter(t => {
-            if(t.recurrence_rule) return occurrenceCounts.has(t.id);
-            return !!(t.due_date && t.due_date >= startStr && t.due_date <= endStr);
-        });
-
-        for(const t of list){
-            if(!t.recurrence_rule) continue;
-            const count = occurrenceCounts.get(t.id) || 0;
-            t.occurrenceNote = count === 1 ? `1 time ${range.label}` : `${count} times ${range.label}`;
-        }
+    // Date filters use the visible window. Pending/Done without a date filter
+    // use this month so status is derived from real occurrences, not masters.
+    let range = getTaskListRange(filter, today);
+    if(!range && (filter === 'pending' || filter === 'done')){
+        range = getTaskListRange('month', today);
     }
 
-    if(filter==='pending') list = list.filter(t=>!t.completed);
-    if(filter==='done') list = list.filter(t=>t.completed);
+    let expanded = [];
+    let rangeStart = null, rangeEnd = null;
+    if(range){
+        rangeStart = fmtDate(range.start);
+        rangeEnd = fmtDate(range.end);
+        expanded = await getTasksForDateRange(range.start, range.end);
+    } else {
+        // "All" still needs an occurrence date for each recurring row so the
+        // checkbox and edit dialog never act on the master's anchor date.
+        const month = getTaskListRange('month', today);
+        const monthRows = await getTasksForDateRange(month.start, month.end);
+        expanded = monthRows.filter(r => r.recurrence_rule);
+    }
+
+    const occurrencesByTask = new Map();
+    for(const row of expanded){
+        if(!row.recurrence_rule) continue;
+        if(!occurrencesByTask.has(row.id)) occurrencesByTask.set(row.id, []);
+        occurrencesByTask.get(row.id).push(row);
+    }
+
+    let list = [];
+    for(const t of S.tasks){
+        if(t.recurrence_rule){
+            const allOccurrences = occurrencesByTask.get(t.id) || [];
+            let candidates = allOccurrences;
+            if(filter === 'pending') candidates = allOccurrences.filter(o => !o.completed);
+            if(filter === 'done') candidates = allOccurrences.filter(o => o.completed);
+
+            if(!candidates.length){
+                if(filter === 'pending' || filter === 'done' || range) continue;
+                list.push({...t, occurrenceNote: 'No occurrences this month'});
+                continue;
+            }
+
+            const chosen = candidates.find(o => o.due_date === todayStr) || candidates[0];
+            const label = range ? range.label : 'this month';
+            const note = allOccurrences.length === 1
+                ? `1 time ${label}`
+                : `${allOccurrences.length} times ${label}`;
+            list.push({...t, ...chosen, id: t.id, occurrenceNote: note});
+        } else {
+            if(range && !(t.due_date && t.due_date >= rangeStart && t.due_date <= rangeEnd)) continue;
+            if(filter === 'pending' && t.completed) continue;
+            if(filter === 'done' && !t.completed) continue;
+            list.push({...t, occurrenceNote: ''});
+        }
+    }
 
     list.sort((a,b)=>{
         if(a.completed !== b.completed) return a.completed?1:-1;
@@ -1788,11 +1821,84 @@ function renderDashBm(){
 }
 
 /* ========= CALENDAR ========= */
-function goToday(){ S.cursor = new Date(); S.selected = new Date(); renderCalendar(); }
-function nav(d){
+const CALENDAR_CACHE_MS = 30000;
+
+function getCalendarRange(){
+    const cursor = new Date(S.cursor);
+    if(S.view === 'month'){
+        const y = cursor.getFullYear(), m = cursor.getMonth();
+        const start = new Date(y, m, 1);
+        start.setDate(start.getDate() - start.getDay());
+        const end = new Date(start);
+        end.setDate(end.getDate() + 41);
+        return {start, end};
+    }
+    const start = new Date(cursor);
+    start.setDate(start.getDate() - start.getDay());
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    return {start, end};
+}
+
+async function loadCalendarRange(start, end, force){
+    const key = fmtDate(start) + '|' + fmtDate(end);
+    const cached = S.calendarCache.get(key);
+    if(!force && cached && (Date.now() - cached.at) < CALENDAR_CACHE_MS){
+        return cached;
+    }
+
+    const startStr = fmtDate(start), endStr = fmtDate(end);
+    const [tasks, rangeEvents, eventOccurrences] = await Promise.all([
+        getTasksForDateRange(start, end),
+        api.get(`/api/events?start=${startStr}&end=${endStr}`),
+        api.get(`/api/events/recurrence-expand?start=${startStr}&end=${endStr}`),
+    ]);
+
+    const eventsById = new Map(rangeEvents.map(e => [e.id, e]));
+    const events = rangeEvents.filter(e => !e.recurrence_rule).slice();
+    for(const occ of eventOccurrences){
+        const base = eventsById.get(occ.event_id);
+        if(!base) continue;
+        events.push({
+            ...base,
+            start_date: occ.occurrence_date,
+            occurrence_date: occ.occurrence_date,
+        });
+    }
+
+    const data = { tasks, events, at: Date.now() };
+    S.calendarCache.set(key, data);
+    if(S.calendarCache.size > 16){
+        S.calendarCache.delete(S.calendarCache.keys().next().value);
+    }
+    return data;
+}
+
+async function refreshCalendar(force){
+    const range = getCalendarRange();
+    const requestId = (S.calendarRequestId || 0) + 1;
+    S.calendarRequestId = requestId;
+    try {
+        const data = await loadCalendarRange(range.start, range.end, !!force);
+        if(requestId !== S.calendarRequestId) return;
+        S.expandedTasks = data.tasks;
+        S.expandedEvents = data.events;
+    } catch(e){
+        console.error('Could not load calendar range:', e);
+    }
+    if(requestId !== S.calendarRequestId) return;
+    renderCalendar();
+}
+
+async function goToday(){
+    S.cursor = new Date();
+    S.selected = new Date();
+    await refreshCalendar();
+}
+async function nav(d){
     if(S.view==='month') S.cursor.setMonth(S.cursor.getMonth()+d);
     else { S.cursor.setDate(S.cursor.getDate() + d*7); }
-    renderCalendar();
+    await refreshCalendar();
 }
 
 /* ========= MOBILE TASK PANEL ========= */
@@ -1824,7 +1930,7 @@ function setViewSeg(){
 }
 document.addEventListener('click', (e)=>{
     const btn = e.target.closest('#viewSeg button');
-    if(btn){ S.view = btn.dataset.v; setViewSeg(); renderCalendar(); }
+    if(btn){ S.view = btn.dataset.v; setViewSeg(); refreshCalendar(); }
 });
 
 /* Get sorted items for a date from cache, used by both calendar cells and day list */
@@ -1913,20 +2019,24 @@ function renderCalendar(){
             const displayText = timeStr ? timeStr + ' ' + title : title;
             const chipClass = `cal-chip ${isEvent ? 'event' : 'task'} ${isDone ? 'done' : ''} ${!timeStr ? 'allday' : ''}`;
             const dataId = isEvent ? `event-${item.id}` : `task-${item.id}`;
-            const handler = isEvent ? `openEventModal(${item.id})` : `openTaskModal(${item.id})`;
+            const taskDate = item.occurrence_date || item.due_date || null;
+            const handler = isEvent
+                ? `openEventModal(${item.id})`
+                : `openTaskModal(${item.id}, null, ${taskDate ? `'${taskDate}'` : 'null'})`;
 
             chipsHtml += `<div class="${chipClass}" style="--chip-color:${col}; --chip-bg:${col};" onclick="event.stopPropagation(); ${handler}" data-item="${dataId}" title="${escapeHtml(item.title)}">${displayText}</div>`;
         });
 
         const moreBtn = moreCount > 0 ? `<span class="cal-more" onclick="event.stopPropagation(); showDayList('${ds}')">+${moreCount} more</span>` : '';
 
-        html += `<div class="cal-cell ${c.other?'other':''} ${isToday?'today':''} ${sel?'selected':''} ${inSelection?'in-selection':''}" data-date="${ds}" onclick="pickDate('${ds}')">
+        html += `<div class="cal-cell ${c.other?'other':''} ${isToday?'today':''} ${sel?'selected':''} ${inSelection?'in-selection':''}" data-date="${ds}">
             <div class="cal-num">${c.d.getDate()}</div>
             ${sortedItems.length > 0 ? `<div class="cal-chips">${chipsHtml}</div>` : ''}
             ${moreBtn}
         </div>`;
     });
     cal.innerHTML = html;
+    updateMultiSelectButton();
 }
 function showDayList(ds){
     // Get sorted items for this date
@@ -1944,7 +2054,10 @@ function showDayList(ds){
             const isDone = item.completed;
             const timeStr = item.start_time ? item.start_time.substring(0,5) + ' ' : '';
             const title = escapeHtml((item.title || '').substring(0, 40));
-            const handler = isEvent ? `openEventModal(${item.id}); closeDayList();` : `openTaskModal(${item.id}); closeDayList();`;
+            const taskDate = item.occurrence_date || item.due_date || null;
+            const handler = isEvent
+                ? `openEventModal(${item.id}); closeDayList();`
+                : `openTaskModal(${item.id}, null, ${taskDate ? `'${taskDate}'` : 'null'}); closeDayList();`;
             return `<div class="cal-day-list-item ${isEvent ? 'event' : 'task'} ${isDone ? 'done' : ''}" style="--item-color:${col};" onclick="event.stopPropagation(); ${handler}">
                 <strong>${timeStr}</strong>${title}
             </div>`;
@@ -1985,7 +2098,14 @@ function closeDayList(){
     if(backdrop) backdrop.remove();
 }
 
-function pickDate(ds){
+function pickDate(ds, ev){
+    if(ev) ev.stopPropagation();
+    if(ev && (ev.ctrlKey || ev.metaKey || S.multiSelectMode)){
+        ev.preventDefault();
+        toggleDateSelection(ds);
+        renderCalendar();
+        return;
+    }
     S.selected = new Date(ds);
     renderCalendar();
     // Always prefill task form with selected date
@@ -1999,10 +2119,19 @@ function toggleMultiSelect(){
     clearSelection();
 }
 
+function updateMultiSelectButton(){
+    const btn = $('multiCreateBtn');
+    if(!btn) return;
+    const count = S.selectedDates.length;
+    $('multiCount').textContent = count;
+    btn.style.display = count > 0 ? 'inline-flex' : 'none';
+}
+
 function clearSelection(){
     S.selectedDates = [];
     S.dragStart = null;
     S.isSelecting = false;
+    updateMultiSelectButton();
     renderCalendar();
     closeModal();
 }
@@ -2016,6 +2145,7 @@ function toggleDateSelection(ds){
     if(idx >= 0) S.selectedDates.splice(idx, 1);
     else S.selectedDates.push(ds);
     S.selectedDates.sort();
+    updateMultiSelectButton();
 }
 
 function getDatesBetween(start, end){
@@ -2062,11 +2192,12 @@ function handleCalendarClick(e){
 
 function handleCalendarMouseDown(e){
     const cell = e.target.closest('[data-date]');
-    if(!cell || S.multiSelectMode) return;
+    if(!cell || S.multiSelectMode || e.ctrlKey || e.metaKey) return;
 
     S.dragStart = cell.dataset.date;
     S.isSelecting = true;
     S.selectedDates = [S.dragStart];
+    updateMultiSelectButton();
 }
 
 function handleCalendarMouseMove(e){
@@ -2088,6 +2219,7 @@ function handleCalendarMouseMove(e){
         if(S.selectedDates.includes(ds)) c.classList.add('in-selection');
         else c.classList.remove('in-selection');
     });
+    updateMultiSelectButton();
 }
 
 function handleCalendarMouseUp(e){
@@ -2101,6 +2233,7 @@ function handleCalendarMouseUp(e){
     // If same cell, just pick that date (single click)
     if(current === S.dragStart){
         S.selectedDates = [];
+        updateMultiSelectButton();
         pickDate(current);
     } else if(S.selectedDates.length > 0){
         // Show popover to create multi-date event/task
@@ -2109,6 +2242,7 @@ function handleCalendarMouseUp(e){
 }
 
 function showMultiSelectPopover(){
+    if(!S.selectedDates.length){ toast('Select one or more dates first','err'); return; }
     const datesStr = S.selectedDates.map(d => fmtShort(d)).join(', ');
     const html = `
     <div class="modal-wrap" onclick="if(event.target===this)clearSelection()">
@@ -2271,10 +2405,14 @@ document.addEventListener('keydown', (e) => {
 /* ========= FORMS: TASK ========= */
 function resetTaskForm(){
     S.editTaskId = null;
+    S.editTaskScope = 'all';
+    S.editTaskOccurrenceDate = null;
     ['fT_title','fT_desc','fT_url','fT_vurl'].forEach(i=>$(i).value='');
     $('fT_cat').value='General';
     $('fT_prio').value='medium';
     $('fT_date').value='';
+    $('fT_date').disabled=false;
+    $('fT_date_error').style.display='none';
     $('fT_start_time').value='';
     $('fT_end_time').value='';
     $('fT_repeat').value='';
@@ -2291,13 +2429,19 @@ function updateRepeatUI(){
     } else {
         container.style.display='none';
     }
+    if(!repeat) $('fT_date_error').style.display='none';
+}
+function validateTaskRepeatDate(){
+    const missing = !!$('fT_repeat').value && !$('fT_date').value;
+    $('fT_date_error').style.display = missing ? 'block' : 'none';
+    return !missing;
 }
 function selectWeekdays(indices){
     // indices: 0=Mon, 1=Tue, ..., 4=Fri, 5=Sat, 6=Sun
     const cbs = document.querySelectorAll('input[name="wd"]');
     cbs.forEach((cb,i)=>cb.checked=indices.includes(i));
 }
-function openTaskModal(id, presetDate){
+function openTaskModal(id, presetDate, occurrenceDate){
     if(id===null || id===undefined){
         resetTaskForm();
         if(presetDate) $('fT_date').value = presetDate;
@@ -2306,9 +2450,9 @@ function openTaskModal(id, presetDate){
     }
     const t = S.tasks.find(x=>x.id===id); if(!t) return;
 
-    // For recurring tasks, show scope dialog first
+    // For recurring tasks, show scope dialog first, using the clicked date.
     if(t.recurrence_rule){
-        showRecurrenceScopeDialog('edit', t);
+        showRecurrenceScopeDialog('edit', t, occurrenceDate);
         return;
     }
 
@@ -2322,9 +2466,10 @@ function openTaskModal(id, presetDate){
     loadTaskIntoForm(t);
 }
 
-function loadTaskIntoForm(t){
+function loadTaskIntoForm(t, occurrenceDate){
     S.editTaskId = t.id;
-    S.editTaskScope = 'all'; // default scope for regular edits
+    if(occurrenceDate) S.editTaskOccurrenceDate = occurrenceDate;
+    if(S.editTaskScope !== 'this') S.editTaskScope = 'all'; // default for regular edits
 
     // Switch to calendar view and scroll to form
     switchView('calendar', document.querySelectorAll('.nav-tab')[1]);
@@ -2356,6 +2501,8 @@ function loadTaskIntoForm(t){
     fT_prio.value = t.priority||'medium';
     fT_cat.value = t.category||'General';
     fT_date.value = t.due_date||'';
+    fT_date.disabled = S.editTaskScope === 'this' && !!S.editTaskOccurrenceDate;
+    $('fT_date_error').style.display='none';
     // If editing old task with only due_time, use it as start_time
     fT_start_time.value = t.start_time || t.due_time || '';
     fT_end_time.value = t.end_time||'';
@@ -2386,7 +2533,8 @@ function loadTaskIntoForm(t){
     if(taskForm) taskForm.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
-function showRecurrenceScopeDialog(action, task){
+function showRecurrenceScopeDialog(action, task, occurrenceDate){
+    const occDate = occurrenceDate || task.due_date || '';
     const html = `
     <div class="modal-wrap" onclick="if(event.target===this)closeModal()">
         <div class="modal" style="max-width:380px;">
@@ -2397,9 +2545,9 @@ function showRecurrenceScopeDialog(action, task){
             <div class="modal-body">
                 <p style="margin-bottom:16px;color:var(--text-1);">This is a recurring task. Would you like to:</p>
                 <div style="display:flex; flex-direction:column; gap:10px;">
-                    <button class="btn" style="justify-content:flex-start; text-align:left;" onclick="handleRecurrenceScope('${action}', ${task.id}, 'this', '${task.due_date}')">
+                    <button class="btn" style="justify-content:flex-start; text-align:left;" onclick="handleRecurrenceScope('${action}', ${task.id}, 'this', '${occDate}')">
                         <span style="font-weight:600;">This occurrence only</span>
-                        <span style="display:block; font-size:12px; color:var(--text-2); font-weight:400;">Affects only ${task.due_date}</span>
+                        <span style="display:block; font-size:12px; color:var(--text-2); font-weight:400;">Affects only ${occDate || 'the selected date'}</span>
                     </button>
                     <button class="btn" style="justify-content:flex-start; text-align:left;" onclick="handleRecurrenceScope('${action}', ${task.id}, 'all', null)">
                         <span style="font-weight:600;">All occurrences</span>
@@ -2412,13 +2560,40 @@ function showRecurrenceScopeDialog(action, task){
     $('modalRoot').innerHTML = html;
 }
 
-function handleRecurrenceScope(action, taskId, scope, occurrenceDate){
+async function findTaskOccurrence(taskId, occurrenceDate){
+    const local = (S.expandedTasks || []).find(t =>
+        t.id === taskId && (t.occurrence_date === occurrenceDate || t.due_date === occurrenceDate)
+    );
+    if(local) return local;
+    const dashboardRows = [
+        ...((S.dashboard && S.dashboard.today_tasks) || []),
+        ...((S.dashboard && S.dashboard.week_tasks) || []),
+    ];
+    const fromDashboard = dashboardRows.find(t =>
+        t.id === taskId && (t.occurrence_date === occurrenceDate || t.due_date === occurrenceDate)
+    );
+    if(fromDashboard) return fromDashboard;
+    try {
+        const day = new Date(occurrenceDate + 'T00:00:00');
+        const rows = await getTasksForDateRange(day, day);
+        return rows.find(t => t.id === taskId && (t.occurrence_date === occurrenceDate || t.due_date === occurrenceDate)) || null;
+    } catch(e){
+        return null;
+    }
+}
+
+async function handleRecurrenceScope(action, taskId, scope, occurrenceDate){
     if(action==='edit'){
         const t = S.tasks.find(x=>x.id===taskId);
         if(!t) return;
         S.editTaskScope = scope;
-        S.editTaskOccurrenceDate = occurrenceDate;
-        loadTaskIntoForm(t);
+        S.editTaskOccurrenceDate = scope === 'this' ? occurrenceDate : null;
+        let formSource = t;
+        if(scope === 'this' && occurrenceDate){
+            const occurrence = await findTaskOccurrence(taskId, occurrenceDate);
+            if(occurrence) formSource = {...t, ...occurrence, id: t.id};
+        }
+        loadTaskIntoForm(formSource, S.editTaskOccurrenceDate);
         closeModal();
     } else if(action==='delete'){
         delTaskWithRecurrenceScope(taskId, scope, occurrenceDate);
@@ -2448,14 +2623,24 @@ async function submitTask(){
         recurrenceRule = repeatVal;
     }
 
+    const dueDate = $('fT_date').value || null;
+    if(recurrenceRule && !dueDate){
+        $('fT_date_error').style.display='block';
+        toast('A repeating task needs a due date','err');
+        $('fT_date').focus();
+        return;
+    }
+    $('fT_date_error').style.display='none';
+
+    const isOccurrenceEdit = !!(S.editTaskId && S.editTaskScope === 'this' && S.editTaskOccurrenceDate);
     const body = {
         title,
         description: $('fT_desc').value.trim(),
         priority: $('fT_prio').value,
         category: $('fT_cat').value.trim()||'General',
-        due_date: $('fT_date').value || null,
-        start_time: $('fT_start_time').value || null,
-        end_time: $('fT_end_time').value || null,
+        due_date: dueDate,
+        start_time: startTime || null,
+        end_time: endTime || null,
         color: $('fT_color').value,
         completed: $('fT_done').checked,
         url: $('fT_url').value.trim(),
@@ -2463,9 +2648,24 @@ async function submitTask(){
         recurrence_rule: recurrenceRule,
     };
     try {
-        if(S.editTaskId) await api.put('/api/tasks/'+S.editTaskId, body);
-        else await api.post('/api/tasks', body);
-        toast(S.editTaskId?'Task updated':'Task added');
+        if(isOccurrenceEdit){
+            await api.put(
+                `/api/tasks/${S.editTaskId}/occurrence/${S.editTaskOccurrenceDate}`,
+                {
+                    title,
+                    description: body.description,
+                    start_time: startTime || '',
+                    end_time: endTime || '',
+                    color: body.color,
+                    completed: body.completed,
+                }
+            );
+            toast('Occurrence updated');
+        } else {
+            if(S.editTaskId) await api.put('/api/tasks/'+S.editTaskId, body);
+            else await api.post('/api/tasks', body);
+            toast(S.editTaskId?'Task updated':'Task added');
+        }
         resetTaskForm();
         await loadAll();
     } catch(e){ console.error(e); }
@@ -2477,16 +2677,17 @@ async function toggleTask(id){
 
 async function toggleTaskOccurrence(taskId, occurrenceDate){
     // Toggle a specific occurrence of a recurring task
-    await api.patch(`/api/tasks/${taskId}/toggle?occurrence_date=${occurrenceDate}`);
+    if(!occurrenceDate){ toast('This repeating task needs a due date','err'); return; }
+    await api.patch(`/api/tasks/${taskId}/toggle?occurrence_date=${encodeURIComponent(occurrenceDate)}`);
     await loadAll();
 }
-async function delTask(id){
+async function delTask(id, occurrenceDate){
     const t = S.tasks.find(x => x.id === id);
     if(!t) return;
 
-    // For recurring tasks, show scope dialog
+    // For recurring tasks, show scope dialog for the clicked occurrence
     if(t.recurrence_rule){
-        showRecurrenceScopeDialog('delete', t);
+        showRecurrenceScopeDialog('delete', t, occurrenceDate);
         return;
     }
 
@@ -2534,7 +2735,9 @@ async function delTaskWithRecurrenceScope(taskId, scope, occurrenceDate){
 function openEventModal(id, presetDate){
     const today = presetDate || fmtDate(new Date());
     const isEdit = !!id;
-    const e = isEdit ? S.events.find(x=>x.id===id) : null;
+    const e = isEdit
+        ? (S.events.find(x=>x.id===id) || (S.expandedEvents||[]).find(x=>x.id===id))
+        : null;
 
     // Check if grouped entry - if so, show scope choice first
     if(isEdit && e && e.group_id){
@@ -2641,7 +2844,9 @@ function showEditScopeDialog(type, entry){
 }
 
 function openEditForScope(type, entryId, scope){
-    const entry = type === 'event' ? S.events.find(e => e.id === entryId) : S.tasks.find(t => t.id === entryId);
+    const entry = type === 'event'
+        ? (S.events.find(e => e.id === entryId) || (S.expandedEvents||[]).find(e => e.id === entryId))
+        : S.tasks.find(t => t.id === entryId);
     if(!entry) return;
 
     if(type === 'event'){
@@ -2934,29 +3139,24 @@ async function checkSyncStatus(){
 /* ========= RECURRENCE HELPERS ========= */
 // Expand recurring tasks and merge with regular tasks for a date range
 async function getTasksForDateRange(startDate, endDate){
-    // Get all regular (non-recurring) tasks
-    let allTasks = S.tasks.filter(t=>!t.recurrence_rule).slice();
-
-    // Get recurring task occurrences from backend
-    try {
-        const start = fmtDate(startDate);
-        const end = fmtDate(endDate);
-        const occurrences = await api.get(`/api/tasks/recurrence-expand?start=${start}&end=${end}`);
-
-        // Create a task instance for each occurrence
-        occurrences.forEach(occ => {
-            const baseTask = S.tasks.find(t => t.id === occ.task_id);
-            if(baseTask){
-                // Clone the task but override the due_date and completion status
-                const taskCopy = {...baseTask, due_date: occ.occurrence_date, completed: occ.completed};
-                allTasks.push(taskCopy);
-            }
-        });
-    } catch(e){
-        console.error('Error expanding recurrence:', e);
+    const start = fmtDate(startDate);
+    const end = fmtDate(endDate);
+    const key = start + '|' + end;
+    const cached = S.taskRangeCache.get(key);
+    if(cached && (Date.now() - cached.at) < CALENDAR_CACHE_MS){
+        return cached.rows;
     }
-
-    return allTasks;
+    try {
+        const rows = await api.get(`/api/tasks/range?start=${start}&end=${end}`);
+        S.taskRangeCache.set(key, {rows, at: Date.now()});
+        if(S.taskRangeCache.size > 16){
+            S.taskRangeCache.delete(S.taskRangeCache.keys().next().value);
+        }
+        return rows;
+    } catch(e){
+        console.error('Error loading tasks in range:', e);
+        return S.tasks.filter(t => !t.recurrence_rule);
+    }
 }
 
 // Expand recurring events for a date range
@@ -2989,30 +3189,21 @@ async function loadAll(){
         api.get('/api/bookmarks'),
     ]);
     S.tasks = tasks;
+    S.dashboard = dash;
     S.bookmarks = bookmarks;
+    S.calendarCache.clear();
+    S.taskRangeCache.clear();
     const today = new Date();
     const y = today.getFullYear(), m = today.getMonth();
     const end = new Date(y,m+2,0);
     S.events = await api.get(`/api/events?start=${fmtDate(new Date(y,m,1))}&end=${fmtDate(end)}`);
-
-    // Pre-fetch recurring task and event expansions for calendar display
-    try {
-        const start = fmtDate(new Date(y,m,1));
-        const endDate = fmtDate(end);
-        S.expandedTasks = await getTasksForDateRange(new Date(y,m,1), end);
-        S.expandedEvents = await getEventsForDateRange(new Date(y,m,1), end);
-    } catch(e){
-        console.error('Error fetching recurring expansions:', e);
-        S.expandedTasks = S.tasks.filter(t=>!t.recurrence_rule);
-        S.expandedEvents = S.events.filter(e=>!e.recurrence_rule);
-    }
 
     updateStats(dash);
 
     try { renderToday(); } catch(e) { console.error('renderToday failed:', e); }
     try { renderWeek(); } catch(e) { console.error('renderWeek failed:', e); }
     try { renderDashBm(); } catch(e) { console.error('renderDashBm failed:', e); }
-    try { renderCalendar(); } catch(e) { console.error('renderCalendar failed:', e); }
+    try { await refreshCalendar(true); } catch(e) { console.error('refreshCalendar failed:', e); }
     try { await renderAllTasksWithRecurrence(); } catch(e) { console.error('renderAllTasksWithRecurrence failed:', e); }
     try { renderBookmarksPage(); } catch(e) { console.error('renderBookmarksPage failed:', e); }
     try { checkSyncStatus(); } catch(e) { console.error('checkSyncStatus failed:', e); }
