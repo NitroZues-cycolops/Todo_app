@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 from typing import Optional, Generic, TypeVar
 from datetime import date, datetime
 
@@ -34,7 +34,11 @@ class TaskBase(BaseModel):
 
 
 class TaskCreate(TaskBase):
-    pass
+    @model_validator(mode='after')
+    def validate_times(self):
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValueError('end_time must be after start_time')
+        return self
 
 
 class TaskUpdate(BaseModel):
@@ -53,6 +57,12 @@ class TaskUpdate(BaseModel):
     group_id: Optional[str] = None
     recurrence_rule: Optional[str] = None
     rrule_until: Optional[date] = None
+
+    @model_validator(mode='after')
+    def validate_times(self):
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValueError('end_time must be after start_time')
+        return self
 
 
 class Task(TaskBase, Timestamped):

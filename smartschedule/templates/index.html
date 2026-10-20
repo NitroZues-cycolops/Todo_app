@@ -2270,7 +2270,8 @@ function loadTaskIntoForm(t){
     fT_cat.value = t.category||'General';
     fT_date.value = t.due_date||'';
     fT_time.value = t.due_time||'';
-    fT_start_time.value = t.start_time||'';
+    // If editing old task with only due_time, use it as start_time
+    fT_start_time.value = t.start_time || t.due_time || '';
     fT_end_time.value = t.end_time||'';
     fT_repeat.value = t.recurrence_rule||'';
     fT_color.value = t.color || pickColor(t.priority);
@@ -2340,6 +2341,14 @@ function handleRecurrenceScope(action, taskId, scope, occurrenceDate){
 async function submitTask(){
     const title = $('fT_title').value.trim();
     if(!title){ toast('Please enter a task title','err'); return; }
+
+    // Validate start_time and end_time
+    const startTime = $('fT_start_time').value;
+    const endTime = $('fT_end_time').value;
+    if(startTime && endTime && endTime <= startTime){
+        toast('End time must be after start time','err');
+        return;
+    }
 
     // Generate recurrence rule if repeat is selected
     let recurrenceRule = null;
