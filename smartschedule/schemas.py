@@ -22,10 +22,15 @@ class TaskBase(BaseModel):
     priority: Optional[str] = "medium"
     due_date: Optional[date] = None
     due_time: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
     category: Optional[str] = "General"
     color: Optional[str] = ""
     url: Optional[str] = ""
     video_url: Optional[str] = ""
+    group_id: Optional[str] = None
+    recurrence_rule: Optional[str] = None
+    rrule_until: Optional[date] = None
 
 
 class TaskCreate(TaskBase):
@@ -39,10 +44,15 @@ class TaskUpdate(BaseModel):
     priority: Optional[str] = None
     due_date: Optional[date] = None
     due_time: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
     category: Optional[str] = None
     color: Optional[str] = None
     url: Optional[str] = None
     video_url: Optional[str] = None
+    group_id: Optional[str] = None
+    recurrence_rule: Optional[str] = None
+    rrule_until: Optional[date] = None
 
 
 class Task(TaskBase, Timestamped):
@@ -62,6 +72,9 @@ class EventBase(BaseModel):
     category: Optional[str] = "General"
     url: Optional[str] = ""
     video_url: Optional[str] = ""
+    group_id: Optional[str] = None
+    recurrence_rule: Optional[str] = None
+    rrule_until: Optional[date] = None
 
 
 class EventCreate(EventBase):
@@ -81,6 +94,9 @@ class EventUpdate(BaseModel):
     category: Optional[str] = None
     url: Optional[str] = None
     video_url: Optional[str] = None
+    group_id: Optional[str] = None
+    recurrence_rule: Optional[str] = None
+    rrule_until: Optional[date] = None
 
 
 class Event(EventBase, Timestamped):

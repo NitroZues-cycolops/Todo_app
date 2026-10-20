@@ -14,10 +14,15 @@ class Task(Base):
     priority = Column(String(20), default="medium")
     due_date = Column(Date, nullable=True)
     due_time = Column(String(10), nullable=True)
+    start_time = Column(String(10), nullable=True)
+    end_time = Column(String(10), nullable=True)
     category = Column(String(100), default="General")
     color = Column(String(20), default="")
     url = Column(String(1000), default="")
     video_url = Column(String(1000), default="")
+    group_id = Column(String(36), nullable=True)
+    recurrence_rule = Column(Text, nullable=True)
+    rrule_until = Column(Date, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -38,6 +43,9 @@ class Event(Base):
     category = Column(String(100), default="General")
     url = Column(String(1000), default="")
     video_url = Column(String(1000), default="")
+    group_id = Column(String(36), nullable=True)
+    recurrence_rule = Column(Text, nullable=True)
+    rrule_until = Column(Date, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -64,3 +72,15 @@ class Setting(Base):
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String(100), unique=True, index=True)
     value = Column(Text, default="")
+
+
+class TaskOccurrence(Base):
+    __tablename__ = "task_occurrences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, nullable=False, index=True)
+    occurrence_date = Column(Date, nullable=False, index=True)
+    completed = Column(Boolean, default=False)
+    cancelled = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

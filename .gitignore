@@ -5,4 +5,12 @@ __pycache__/
 .env.*
 !.env.example
 *.db
+credentials.json.env
 credentials.json
+.env
+venv/
+*.db
+token.json
+__pycache__/
+*.sqlite3
+*.sqlite

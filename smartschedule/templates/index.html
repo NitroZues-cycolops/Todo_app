@@ -487,6 +487,8 @@
         .cal-cell.other { background: #fafafa; color: var(--text-3); }
         .cal-cell.today { background: #eef2ff; }
         .cal-cell.selected { background: #eef2ff; box-shadow: inset 0 0 0 2px var(--accent); }
+        .cal-cell.in-selection { background: #dbeafe; box-shadow: inset 0 0 0 1px var(--accent); }
+        .cal-cell.drag-over { background: #bfdbfe; }
         .cal-num {
             font-size: 12.5px;
             font-weight: 600;
@@ -853,7 +855,171 @@
             .app-shell { padding: 18px 14px 60px; }
             .form-grid, .form-grid-3 { grid-template-columns: 1fr; }
             .top-bar { flex-direction: column; align-items: flex-start; }
+
+            /* Mobile: calendar layout stacks, task panel becomes bottom sheet */
+            #view-calendar > div {
+                grid-template-columns: 1fr !important;
+                gap: 0 !important;
+            }
+
+            #view-calendar > div > div:last-child {
+                display: none;
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                max-height: 70vh;
+                border-radius: 20px 20px 0 0;
+                background: var(--bg-card-solid);
+                z-index: 100;
+                box-shadow: 0 -10px 30px rgba(15,23,42,0.2);
+                border: 1px solid var(--border);
+                border-bottom: none;
+                padding: 20px;
+                overflow-y: auto;
+            }
+
+            #view-calendar > div > div:last-child.open {
+                display: flex;
+            }
         }
+
+
+        /* ========== AI PLANNER ========== */
+        .ai-tabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 18px;
+        }
+        .ai-tab-btn {
+            flex: 1;
+            padding: 9px 14px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-2);
+            transition: all 0.18s;
+        }
+        .ai-tab-btn.active {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: white;
+            border-color: transparent;
+        }
+        .ai-tab-content { display: none; }
+        .ai-tab-content.active { display: block; }
+        .ai-textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            font-size: 13.5px;
+            font-family: inherit;
+            color: var(--text-0);
+            background: var(--bg-0);
+            resize: vertical;
+            outline: none;
+            transition: border-color 0.18s;
+        }
+        .ai-textarea:focus { border-color: var(--accent); }
+        .ai-file-area {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 28px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.18s;
+            color: var(--text-2);
+        }
+        .ai-file-area:hover { border-color: var(--accent); background: rgba(99,102,241,0.04); }
+        .ai-file-area input { display: none; }
+        .ai-spinner {
+            display: inline-block;
+            width: 18px; height: 18px;
+            border: 2px solid rgba(255,255,255,0.4);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .ai-preview-section { margin-top: 4px; }
+        .ai-preview-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 16px 0 10px;
+        }
+        .ai-preview-header h4 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-2);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .ai-item-card {
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .ai-item-card.conflict {
+            border-color: #fecaca;
+            background: #fef2f2;
+        }
+        .ai-item-card .ai-item-icon {
+            font-size: 18px;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .ai-item-details { flex: 1; min-width: 0; }
+        .ai-item-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-0);
+            margin-bottom: 3px;
+        }
+        .ai-item-meta {
+            font-size: 12px;
+            color: var(--text-2);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .ai-conflict-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 20px;
+            background: #fee2e2;
+            color: #dc2626;
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+        .ai-modal-wide { max-width: 640px; }
+        .ai-empty {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-3);
+            font-size: 13px;
+        }
+        #aiPlannerBtn {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            border: none;
+            box-shadow: 0 4px 12px -4px rgba(99,102,241,0.6);
+        }
+        #aiPlannerBtn:hover { box-shadow: 0 8px 20px -6px rgba(99,102,241,0.75); }
     </style>
 </head>
 <body>
@@ -871,6 +1037,7 @@
         <div class="top-actions">
             <div id="syncBadge" class="pill">Checking sync...</div>
             <button class="btn" onclick="syncAll()">⟳ Sync Sheets</button>
+            <button id="aiPlannerBtn" class="btn" onclick="openAIPlannerModal()">🤖 AI Planner</button>
         </div>
     </div>
 
@@ -878,7 +1045,6 @@
     <div class="nav-tabs">
         <button class="nav-tab active" onclick="switchView('dashboard', this)">🏠 Dashboard</button>
         <button class="nav-tab" onclick="switchView('calendar', this)">📅 Calendar</button>
-        <button class="nav-tab" onclick="switchView('tasks', this)">✓ Tasks</button>
         <button class="nav-tab" onclick="switchView('bookmarks', this)">🔗 Hyper Tiles</button>
     </div>
 
@@ -955,125 +1121,151 @@
 
     <!-- ============== CALENDAR ============== -->
     <div id="view-calendar" class="view">
-        <div class="section">
-            <div class="cal-toolbar">
-                <div class="cal-nav">
-                    <button class="icon-btn" onclick="nav(-1)">‹</button>
-                    <div class="cal-title" id="calTitle">October 2026</div>
-                    <button class="icon-btn" onclick="nav(1)">›</button>
-                </div>
-                <div style="display:flex; gap:10px; align-items:center;">
-                    <div class="seg" id="viewSeg">
-                        <button data-v="month" class="on">Month</button>
-                        <button data-v="week">Week</button>
-                    </div>
-                    <button class="btn btn-sm" onclick="goToday()">Today</button>
-                </div>
-            </div>
-            <div id="calendar" class="calendar"></div>
-        </div>
-
-        <div class="section">
-            <div class="day-head">
-                <div class="day-title">
-                    <span class="emoji" id="selEmoji">📌</span>
-                    <div>
-                        <div id="selTitle">Today's Plan</div>
-                        <div style="font-size:12px; color:var(--text-2); font-weight:500;" id="selDate"></div>
-                    </div>
-                </div>
-                <div style="display:flex; gap:6px;">
-                    <button class="btn btn-sm" onclick="openTaskModal(null, selDateStr())">+ Task</button>
-                    <button class="btn btn-sm btn-primary" onclick="openEventModal(null, selDateStr())">+ Event</button>
-                </div>
-            </div>
-            <div id="selList"></div>
-        </div>
-    </div>
-
-    <!-- ============== TASKS ============== -->
-    <div id="view-tasks" class="view">
-        <div class="grid-2">
+        <div style="display: grid; grid-template-columns: 1fr 380px; gap: 24px; align-items: start;">
+            <!-- LEFT: Calendar -->
             <div class="section">
-                <div class="section-head">
-                    <div class="section-title"><span class="dot"></span> <span id="formKindTitle">New Task</span></div>
+                <div class="cal-toolbar">
+                    <div class="cal-nav">
+                        <button class="icon-btn" onclick="nav(-1)">‹</button>
+                        <div class="cal-title" id="calTitle">October 2026</div>
+                        <button class="icon-btn" onclick="nav(1)">›</button>
+                    </div>
+                    <div style="display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
+                        <div class="seg" id="viewSeg">
+                            <button data-v="month" class="on">Month</button>
+                            <button data-v="week">Week</button>
+                        </div>
+                        <div class="checkrow">
+                            <input type="checkbox" id="multiSelectToggle" onchange="toggleMultiSelect()">
+                            <label for="multiSelectToggle" style="margin: 0;">Select Multiple</label>
+                        </div>
+                        <button class="btn btn-sm" onclick="goToday()">Today</button>
+                        <button class="btn btn-sm btn-primary" id="mobileTaskBtn" style="display:none; margin-left: auto;" onclick="toggleMobileTaskPanel()">+ Task</button>
+                    </div>
                 </div>
-                <div id="taskForm">
-                    <div class="form-col" style="margin-bottom:12px;">
-                        <label class="form-label">Task Title *</label>
-                        <input id="fT_title" placeholder="What do you need to do?">
+                <div id="calendar" class="calendar"></div>
+            </div>
+
+            <!-- RIGHT: Task Panel (scrollable) -->
+            <div style="display: flex; flex-direction: column; gap: 16px; height: fit-content; max-height: 80vh; overflow-y: auto; padding-right: 8px;">
+                <!-- Create Task Section -->
+                <div class="section" style="margin: 0;">
+                    <div class="section-head">
+                        <div class="section-title"><span class="dot"></span> Create Task</div>
+                        <button class="btn btn-sm btn-primary" onclick="openEventModal(null, selDateStr())">+ Event</button>
                     </div>
-                    <div class="form-col" style="margin-bottom:12px;">
-                        <label class="form-label">Description</label>
-                        <textarea id="fT_desc" placeholder="Add details..." rows="2"></textarea>
-                    </div>
-                    <div class="form-grid" style="margin-bottom:12px;">
-                        <div class="form-col">
-                            <label class="form-label">Priority</label>
-                            <select id="fT_prio">
-                                <option value="low">🟢 Low</option>
-                                <option value="medium" selected>🟡 Medium</option>
-                                <option value="high">🔴 High</option>
-                            </select>
+                    <div id="taskForm">
+                        <div class="form-col" style="margin-bottom:12px;">
+                            <label class="form-label">Task Title *</label>
+                            <input id="fT_title" placeholder="What do you need to do?">
                         </div>
-                        <div class="form-col">
-                            <label class="form-label">Category</label>
-                            <input id="fT_cat" placeholder="Work / Personal" value="General">
+                        <div class="form-col" style="margin-bottom:12px;">
+                            <label class="form-label">Description</label>
+                            <textarea id="fT_desc" placeholder="Add details..." rows="2"></textarea>
                         </div>
-                    </div>
-                    <div class="form-grid" style="margin-bottom:12px;">
-                        <div class="form-col">
-                            <label class="form-label">Due Date</label>
-                            <input id="fT_date" type="date">
-                        </div>
-                        <div class="form-col">
-                            <label class="form-label">Due Time</label>
-                            <input id="fT_time" type="time">
-                        </div>
-                    </div>
-                    <div class="form-grid" style="margin-bottom:12px;">
-                        <div class="form-col">
-                            <label class="form-label">🎨 Custom Color</label>
-                            <input id="fT_color" type="color" value="#6366f1">
-                        </div>
-                        <div class="form-col">
-                            <label class="form-label">Toggle</label>
-                            <div class="checkrow">
-                                <input type="checkbox" id="fT_done">
-                                <label for="fT_done">Mark as completed</label>
+                        <div class="form-grid" style="margin-bottom:12px;">
+                            <div class="form-col">
+                                <label class="form-label">Priority</label>
+                                <select id="fT_prio">
+                                    <option value="low">🟢 Low</option>
+                                    <option value="medium" selected>🟡 Medium</option>
+                                    <option value="high">🔴 High</option>
+                                </select>
+                            </div>
+                            <div class="form-col">
+                                <label class="form-label">Category</label>
+                                <input id="fT_cat" placeholder="Work / Personal" value="General">
                             </div>
                         </div>
-                    </div>
-                    <div class="form-col" style="margin-bottom:12px;">
-                        <label class="form-label">🔗 Website Link</label>
-                        <input id="fT_url" placeholder="https://example.com">
-                    </div>
-                    <div class="form-col" style="margin-bottom:16px;">
-                        <label class="form-label">🎬 Video Link (YouTube/Vimeo)</label>
-                        <input id="fT_vurl" placeholder="https://youtube.com/watch?v=...">
-                    </div>
-                    <div style="display:flex; gap:10px;">
-                        <button class="btn btn-primary" style="flex:1;" onclick="submitTask()">💾 Save Task</button>
-                        <button class="btn btn-ghost" onclick="resetTaskForm()">Cancel</button>
+                        <div class="form-grid" style="margin-bottom:12px;">
+                            <div class="form-col">
+                                <label class="form-label">Due Date</label>
+                                <input id="fT_date" type="date">
+                            </div>
+                            <div class="form-col">
+                                <label class="form-label">Due Time</label>
+                                <input id="fT_time" type="time">
+                            </div>
+                        </div>
+                        <div class="form-grid" style="margin-bottom:12px;">
+                            <div class="form-col">
+                                <label class="form-label">Start Time</label>
+                                <input id="fT_start_time" type="time">
+                            </div>
+                            <div class="form-col">
+                                <label class="form-label">End Time</label>
+                                <input id="fT_end_time" type="time">
+                            </div>
+                        </div>
+                        <div class="form-col" style="margin-bottom:12px;">
+                            <label class="form-label">🔄 Repeat</label>
+                            <select id="fT_repeat" onchange="updateRepeatUI()">
+                                <option value="">Never</option>
+                                <option value="FREQ=DAILY">Every day</option>
+                                <option value="FREQ=WEEKLY;BYDAY=custom">Selected weekdays</option>
+                                <option value="FREQ=WEEKLY">Every week</option>
+                                <option value="FREQ=ALWAYS">Always (pinned)</option>
+                            </select>
+                        </div>
+                        <div id="fT_weekday_container" class="form-col" style="margin-bottom:12px; display:none;">
+                            <label class="form-label">Select Days</label>
+                            <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">
+                                <label class="checkrow" style="margin:0;"><input type="checkbox" name="wd" value="MO"> Mon</label>
+                                <label class="checkrow" style="margin:0;"><input type="checkbox" name="wd" value="TU"> Tue</label>
+                                <label class="checkrow" style="margin:0;"><input type="checkbox" name="wd" value="WE"> Wed</label>
+                                <label class="checkrow" style="margin:0;"><input type="checkbox" name="wd" value="TH"> Thu</label>
+                                <label class="checkrow" style="margin:0;"><input type="checkbox" name="wd" value="FR"> Fri</label>
+                                <label class="checkrow" style="margin:0;"><input type="checkbox" name="wd" value="SA"> Sat</label>
+                                <label class="checkrow" style="margin:0;"><input type="checkbox" name="wd" value="SU"> Sun</label>
+                                <button type="button" class="btn btn-sm" style="grid-column:4;" onclick="selectWeekdays([1,2,3,4,5])">Weekdays</button>
+                            </div>
+                        </div>
+                        <div class="form-grid" style="margin-bottom:12px;">
+                            <div class="form-col">
+                                <label class="form-label">🎨 Custom Color</label>
+                                <input id="fT_color" type="color" value="#6366f1">
+                            </div>
+                            <div class="form-col">
+                                <label class="form-label">Toggle</label>
+                                <div class="checkrow">
+                                    <input type="checkbox" id="fT_done">
+                                    <label for="fT_done">Mark as completed</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-col" style="margin-bottom:12px;">
+                            <label class="form-label">🔗 Website Link</label>
+                            <input id="fT_url" placeholder="https://example.com">
+                        </div>
+                        <div class="form-col" style="margin-bottom:16px;">
+                            <label class="form-label">🎬 Video Link (YouTube/Vimeo)</label>
+                            <input id="fT_vurl" placeholder="https://youtube.com/watch?v=...">
+                        </div>
+                        <div style="display:flex; gap:10px;">
+                            <button class="btn btn-primary" style="flex:1;" onclick="submitTask()">💾 Save Task</button>
+                            <button class="btn btn-ghost" onclick="resetTaskForm()">Cancel</button>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="section">
-                <div class="section-head">
-                    <div class="section-title"><span class="dot"></span> All Tasks</div>
-                    <select id="taskFilter" style="max-width:160px;" onchange="renderAllTasks()">
-                        <option value="all">📋 All Tasks</option>
-                        <option value="pending">⏳ Pending</option>
-                        <option value="done">✅ Completed</option>
-                        <option value="today">🎯 Today</option>
-                        <option value="week">🗓 This Week</option>
-                    </select>
+                <!-- All Tasks List -->
+                <div class="section" style="margin: 0; flex: 1; display: flex; flex-direction: column;">
+                    <div class="section-head">
+                        <div class="section-title"><span class="dot"></span> Tasks</div>
+                        <select id="taskFilter" style="max-width:140px; padding:7px 10px; font-size:12px;" onchange="renderAllTasksWithRecurrence()">
+                            <option value="all">📋 All</option>
+                            <option value="pending">⏳ Pending</option>
+                            <option value="done">✅ Done</option>
+                            <option value="today">🎯 Today</option>
+                            <option value="week">🗓 Week</option>
+                        </select>
+                    </div>
+                    <div id="allTasksList" class="list-group" style="flex: 1; overflow-y: auto; min-height: 200px;"></div>
                 </div>
-                <div id="allTasksList" class="list-group"></div>
             </div>
         </div>
     </div>
+
 
     <!-- ============== BOOKMARKS ============== -->
     <div id="view-bookmarks" class="view">
@@ -1096,13 +1288,23 @@ const S = {
     tasks: [], events: [], bookmarks: [],
     cursor: new Date(), selected: new Date(), view: 'month',
     editTaskId: null,
+    selectedDates: [],        // array of date strings (YYYY-MM-DD) for multi-select
+    dragStart: null,          // date string when drag begins
+    isSelecting: false,       // true during mouse drag
+    multiSelectMode: false,   // true when "Select Multiple" toggle is active
 };
 const ICONS = ['🔗','🌐','📧','📁','📝','🎨','🎵','🎬','📚','💼','💰','🛒','🎮','🏃','🍳','✈️','📅','📱','💡','🚀','⭐','❤️','🔥','💎','🎯','🏠','🔔','📊','🎓','🏆'];
 const VIDEOS = ['youtube.com', 'youtu.be', 'vimeo.com', 'loom.com'];
 
 /* ========= HELPERS ========= */
 const $ = id => document.getElementById(id);
-const fmtDate = d => { const x = typeof d === 'string' ? new Date(d) : d; return x.toISOString().split('T')[0]; };
+const fmtDate = d => {
+    const x = typeof d === 'string' ? new Date(d) : d;
+    const y = x.getFullYear();
+    const m = String(x.getMonth()+1).padStart(2,'0');
+    const d_ = String(x.getDate()).padStart(2,'0');
+    return `${y}-${m}-${d_}`;
+};
 const fmtNice = d => (typeof d==='string'?new Date(d):d).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
 const fmtShort = d => (typeof d==='string'?new Date(d):d).toLocaleDateString('en-US',{month:'short',day:'numeric'});
 function pickColor(pri) {
@@ -1134,11 +1336,56 @@ function selDateStr(){ return fmtDate(S.selected); }
 
 /* ========= API ========= */
 const api = {
-    get: async p => await (await fetch(p)).json(),
-    post: async (p,b) => await (await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined})).json(),
-    put: async (p,b) => await (await fetch(p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json(),
-    patch: async (p,b) => await (await fetch(p,{method:'PATCH',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined})).json(),
-    del: async p => await (await fetch(p,{method:'DELETE'})).json(),
+    get: async p => {
+        const r = await fetch(p);
+        if(!r.ok) {
+            const e = await r.json().catch(()=>({}));
+            const msg = e.detail || `HTTP ${r.status}`;
+            toast(msg, 'err');
+            throw new Error(msg);
+        }
+        return await r.json();
+    },
+    post: async (p,b) => {
+        const r = await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
+        if(!r.ok) {
+            const e = await r.json().catch(()=>({}));
+            const msg = e.detail || `HTTP ${r.status}`;
+            toast(msg, 'err');
+            throw new Error(msg);
+        }
+        return await r.json();
+    },
+    put: async (p,b) => {
+        const r = await fetch(p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+        if(!r.ok) {
+            const e = await r.json().catch(()=>({}));
+            const msg = e.detail || `HTTP ${r.status}`;
+            toast(msg, 'err');
+            throw new Error(msg);
+        }
+        return await r.json();
+    },
+    patch: async (p,b) => {
+        const r = await fetch(p,{method:'PATCH',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
+        if(!r.ok) {
+            const e = await r.json().catch(()=>({}));
+            const msg = e.detail || `HTTP ${r.status}`;
+            toast(msg, 'err');
+            throw new Error(msg);
+        }
+        return await r.json();
+    },
+    del: async p => {
+        const r = await fetch(p,{method:'DELETE'});
+        if(!r.ok) {
+            const e = await r.json().catch(()=>({}));
+            const msg = e.detail || `HTTP ${r.status}`;
+            toast(msg, 'err');
+            throw new Error(msg);
+        }
+        return await r.json();
+    },
 };
 
 function toast(msg, type='ok'){
@@ -1149,14 +1396,22 @@ function toast(msg, type='ok'){
     setTimeout(()=>{ el.style.opacity='0'; el.style.transform='translateX(20px)'; el.style.transition='all .3s'; setTimeout(()=>el.remove(),300);},2400);
 }
 
+// Catch unhandled promise rejections
+window.addEventListener('unhandledrejection', e => {
+    console.error('Unhandled rejection:', e.reason);
+    if(e.reason?.message) toast(e.reason.message, 'err');
+});
+
 /* ========= VIEWS ========= */
 function switchView(name, btn){
     document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
     document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
     btn.classList.add('active');
     $('view-'+name).classList.add('active');
-    if(name==='calendar') renderCalendar();
-    if(name==='tasks') renderAllTasks();
+    if(name==='calendar') {
+        renderCalendar();
+        renderAllTasksWithRecurrence();  // Also render task list when showing calendar
+    }
     if(name==='bookmarks') renderBookmarksPage();
 }
 
@@ -1178,6 +1433,11 @@ function taskChips(t){
     let h = '';
     h += `<span class="chip prio-${pri==='high'?'high':(pri==='medium'?'med':'low')}">${pri[0].toUpperCase()+pri.slice(1)}</span>`;
     if (t.due_date) h += `<span class="chip time">📅 ${fmtShort(t.due_date)}${t.due_time?' ⋅ '+t.due_time:''}</span>`;
+    // Show start/end times if they exist (for calendar display)
+    if (t.start_time) {
+        const timeDisplay = t.end_time ? `${t.start_time} – ${t.end_time}` : t.start_time;
+        h += `<span class="chip time">⏰ ${timeDisplay}</span>`;
+    }
     if (t.category) h += `<span class="chip cat">🏷 ${escapeHtml(t.category)}</span>`;
     if (t.url) h += `<a class="chip link" href="${t.url}" target="_blank" onclick="event.stopPropagation()">🔗 Link</a>`;
     if (t.video_url) h += `<a class="chip video" href="#" onclick="event.stopPropagation(); openVideo('${escapeHtml(t.video_url)}');return false;">🎬 Watch</a>`;
@@ -1187,9 +1447,11 @@ function taskChips(t){
 function renderTaskCard(t, compact){
     const col = t.color || pickColor(t.priority);
     const col2 = color2(col);
+    // For recurring tasks, pass the occurrence_date to toggleTask
+    const toggleCall = t.recurrence_rule ? `toggleTaskOccurrence(${t.id}, '${t.due_date}')` : `toggleTask(${t.id})`;
     return `
-        <div class="card-item ${t.completed?'done':''}" style="--ci-c:${col};" onclick="openTaskModal(${t.id})">
-            <div class="check ${t.completed?'on':''}" onclick="event.stopPropagation(); toggleTask(${t.id})">${t.completed?'✓':''}</div>
+        <div class="card-item ${t.completed?'done':''}" style="--ci-c:${col}; ${t.completed?'opacity:0.6; text-decoration:line-through;':''}" onclick="openTaskModal(${t.id})">
+            <div class="check ${t.completed?'on':''}" onclick="event.stopPropagation(); ${toggleCall}">${t.completed?'✓':''}</div>
             <div class="ci-body">
                 <div class="ci-title">${escapeHtml(t.title)}</div>
                 ${t.description ? `<div class="ci-desc">${escapeHtml(t.description)}</div>` : ''}
@@ -1276,19 +1538,6 @@ function renderWeek(){
     }).join('')}</div>`;
 }
 
-function renderSelected(){
-    const t = selDateStr();
-    const todayStr = fmtDate(new Date());
-    const isToday = t === todayStr;
-    const isPast = t < todayStr;
-    $('selTitle').textContent = isToday ? "Today's Plan" : isPast ? "Past Plan" : "Day Plan";
-    $('selDate').textContent = fmtNice(S.selected);
-    $('selEmoji').textContent = isToday ? '☀️' : isPast ? '📜' : '🎯';
-    const evs = S.events.filter(e=>{const s=e.start_date, en=e.end_date||e.start_date; return t>=s && t<=en;})
-        .sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''));
-    const ts = S.tasks.filter(x=>x.due_date===t);
-    renderDayList('selList', [...evs, ...ts]);
-}
 
 /* ========= ALL TASKS PAGE ========= */
 function renderAllTasks(){
@@ -1307,6 +1556,35 @@ function renderAllTasks(){
         if(da!==db) return da.localeCompare(db);
         return b.id - a.id;
     });
+    if(!list.length){ $('allTasksList').innerHTML = `<div class="empty"><div class="big">📝</div>No tasks match this filter.</div>`; return;}
+    $('allTasksList').innerHTML = list.map(t=>renderTaskCard(t)).join('');
+}
+
+// Async version that expands recurring tasks
+async function renderAllTasksWithRecurrence(){
+    const filter = $('taskFilter').value;
+    const today = new Date();
+    const weekEnd = new Date(today); weekEnd.setDate(weekEnd.getDate()+7);
+
+    // Get expanded tasks for the displayed date range
+    const allTasks = await getTasksForDateRange(today, weekEnd);
+
+    const todayStr = fmtDate(today);
+    const weekStr = fmtDate(weekEnd);
+    let list = allTasks;
+
+    if(filter==='pending') list = list.filter(t=>!t.completed);
+    if(filter==='done') list = list.filter(t=>t.completed);
+    if(filter==='today') list = list.filter(t=>t.due_date===todayStr);
+    if(filter==='week') list = list.filter(t=>t.due_date && t.due_date>=todayStr && t.due_date<=weekStr);
+
+    list.sort((a,b)=>{
+        if(a.completed !== b.completed) return a.completed?1:-1;
+        const da = a.due_date||'9999', db = b.due_date||'9999';
+        if(da!==db) return da.localeCompare(db);
+        return b.id - a.id;
+    });
+
     if(!list.length){ $('allTasksList').innerHTML = `<div class="empty"><div class="big">📝</div>No tasks match this filter.</div>`; return;}
     $('allTasksList').innerHTML = list.map(t=>renderTaskCard(t)).join('');
 }
@@ -1351,12 +1629,45 @@ function renderDashBm(){
 }
 
 /* ========= CALENDAR ========= */
-function goToday(){ S.cursor = new Date(); S.selected = new Date(); renderCalendar(); renderSelected(); }
+function goToday(){ S.cursor = new Date(); S.selected = new Date(); renderCalendar(); }
 function nav(d){
     if(S.view==='month') S.cursor.setMonth(S.cursor.getMonth()+d);
     else { S.cursor.setDate(S.cursor.getDate() + d*7); }
     renderCalendar();
 }
+
+/* ========= MOBILE TASK PANEL ========= */
+function toggleMobileTaskPanel(){
+    const taskPanel = document.querySelector('#view-calendar > div > div:last-child');
+    if(taskPanel) {
+        taskPanel.classList.toggle('open');
+    }
+}
+
+function hideMobileTaskPanel(){
+    const taskPanel = document.querySelector('#view-calendar > div > div:last-child');
+    if(taskPanel) {
+        taskPanel.classList.remove('open');
+    }
+}
+
+// Show/hide mobile task button based on screen size
+function updateMobileUI(){
+    const isMobile = window.innerWidth <= 720;
+    const mobileBtn = $('mobileTaskBtn');
+    const taskPanel = document.querySelector('#view-calendar > div > div:last-child');
+    if(mobileBtn) {
+        mobileBtn.style.display = isMobile ? 'inline-flex' : 'none';
+    }
+    if(isMobile && taskPanel) {
+        taskPanel.style.display = 'none';
+    }
+}
+
+window.addEventListener('resize', updateMobileUI);
+// Call on initial load
+updateMobileUI();
+
 function setViewSeg(){
     document.querySelectorAll('#viewSeg button').forEach(b=>{
         b.classList.toggle('on', b.dataset.v === S.view);
@@ -1387,15 +1698,42 @@ function renderCalendar(){
         $('calTitle').textContent = `Week of ${st.toLocaleDateString('en-US',{month:'short', day:'numeric', year:'numeric'})}`;
         for(let i=0;i<7;i++){ const x=new Date(st); x.setDate(st.getDate()+i); cells.push({d:x, other:false}); }
     }
+
+    // Build maps from cached expanded tasks/events
+    const allEventsMap = {};
+    const allTasksMap = {};
+    cells.forEach(c => {
+        const ds = fmtDate(c.d);
+        allEventsMap[ds] = [];
+        allTasksMap[ds] = [];
+    });
+
+    // Use cached expanded tasks and events
+    const expandedTasks = S.expandedTasks || [];
+    const expandedEvents = S.expandedEvents || [];
+
+    // Add all events (both recurring and non-recurring via cache)
+    expandedEvents.forEach(e=>{
+        const ds = e.start_date || e.occurrence_date;
+        if(allEventsMap[ds]) allEventsMap[ds].push(e);
+    });
+
+    // Add all tasks (both recurring and non-recurring via cache)
+    expandedTasks.forEach(t=>{
+        const ds = t.due_date;
+        if(allTasksMap[ds]) allTasksMap[ds].push(t);
+    });
+
     const hdrs = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     let html = hdrs.map(h=>`<div class="cal-hd">${h}</div>`).join('');
     cells.forEach(c=>{
         const ds = fmtDate(c.d);
         const isToday = c.d.getTime()===today.getTime();
         const sel = ds===selStr;
-        const dayEvs = S.events.filter(e=>{const s=e.start_date, en=e.end_date||e.start_date; return ds>=s && ds<=en;});
-        const dayTs = S.tasks.filter(t=>t.due_date===ds);
-        html += `<div class="cal-cell ${c.other?'other':''} ${isToday?'today':''} ${sel?'selected':''}" onclick="pickDate('${ds}')">
+        const inSelection = S.selectedDates.includes(ds);
+        const dayEvs = allEventsMap[ds] || [];
+        const dayTs = allTasksMap[ds] || [];
+        html += `<div class="cal-cell ${c.other?'other':''} ${isToday?'today':''} ${sel?'selected':''} ${inSelection?'in-selection':''}" data-date="${ds}">
             <div class="cal-num">${c.d.getDate()}</div>
             ${dayEvs.slice(0,3).map(e=>`<div class="cal-ev" style="background:${e.color||'#6366f1'};" onclick="event.stopPropagation(); openEventModal(${e.id})">${!e.all_day?e.start_time+' ':''}${escapeHtml(e.title)}</div>`).join('')}
             ${dayEvs.length>3?`<span class="cal-more">+${dayEvs.length-3} more</span>`:''}
@@ -1407,49 +1745,457 @@ function renderCalendar(){
 function pickDate(ds){
     S.selected = new Date(ds);
     renderCalendar();
-    renderSelected();
+    // Always prefill task form with selected date
+    const el = $('fT_date');
+    if(el) el.value = ds;
 }
+
+/* ========= MULTI-SELECT CALENDAR ========= */
+function toggleMultiSelect(){
+    S.multiSelectMode = $('multiSelectToggle').checked;
+    clearSelection();
+}
+
+function clearSelection(){
+    S.selectedDates = [];
+    S.dragStart = null;
+    S.isSelecting = false;
+    renderCalendar();
+    closeModal();
+}
+
+function isDateInSelection(ds){
+    return S.selectedDates.includes(ds);
+}
+
+function toggleDateSelection(ds){
+    const idx = S.selectedDates.indexOf(ds);
+    if(idx >= 0) S.selectedDates.splice(idx, 1);
+    else S.selectedDates.push(ds);
+    S.selectedDates.sort();
+}
+
+function getDatesBetween(start, end){
+    const dates = [];
+    const curr = new Date(start);
+    const en = new Date(end);
+    while(curr <= en){
+        dates.push(fmtDate(curr));
+        curr.setDate(curr.getDate() + 1);
+    }
+    return dates;
+}
+
+function isContiguousRange(dates){
+    if(dates.length <= 1) return true;
+    const sorted = [...dates].sort();
+    for(let i = 0; i < sorted.length - 1; i++){
+        const curr = new Date(sorted[i]);
+        const next = new Date(sorted[i+1]);
+        if((next - curr) / (1000 * 60 * 60 * 24) !== 1) return false;
+    }
+    return true;
+}
+
+function handleCalendarClick(e){
+    const cell = e.target.closest('[data-date]');
+    if(!cell) return;
+    const ds = cell.dataset.date;
+
+    if(S.isSelecting) return; // ignore clicks during drag
+
+    if(e.ctrlKey || e.metaKey){
+        e.preventDefault();
+        toggleDateSelection(ds);
+        renderCalendar();
+    } else if(S.multiSelectMode){
+        e.preventDefault();
+        toggleDateSelection(ds);
+        renderCalendar();
+    } else {
+        pickDate(ds);
+    }
+}
+
+function handleCalendarMouseDown(e){
+    const cell = e.target.closest('[data-date]');
+    if(!cell || S.multiSelectMode) return;
+
+    S.dragStart = cell.dataset.date;
+    S.isSelecting = true;
+    S.selectedDates = [S.dragStart];
+}
+
+function handleCalendarMouseMove(e){
+    if(!S.isSelecting || !S.dragStart) return;
+
+    const cell = e.target.closest('[data-date]');
+    if(!cell) return;
+
+    const current = cell.dataset.date;
+    if(current === S.dragStart) return;
+
+    // Get range between start and current
+    const range = getDatesBetween(S.dragStart, current);
+    S.selectedDates = range;
+
+    // Update UI without re-rendering calendar (just toggle classes)
+    document.querySelectorAll('.cal-cell').forEach(c => {
+        const ds = c.dataset.date;
+        if(S.selectedDates.includes(ds)) c.classList.add('in-selection');
+        else c.classList.remove('in-selection');
+    });
+}
+
+function handleCalendarMouseUp(e){
+    if(!S.isSelecting) return;
+
+    const cell = e.target.closest('[data-date]');
+    const current = cell ? cell.dataset.date : S.dragStart;
+
+    S.isSelecting = false;
+
+    // If same cell, just pick that date (single click)
+    if(current === S.dragStart){
+        S.selectedDates = [];
+        pickDate(current);
+    } else if(S.selectedDates.length > 0){
+        // Show popover to create multi-date event/task
+        showMultiSelectPopover();
+    }
+}
+
+function showMultiSelectPopover(){
+    const datesStr = S.selectedDates.map(d => fmtShort(d)).join(', ');
+    const html = `
+    <div class="modal-wrap" onclick="if(event.target===this)clearSelection()">
+    <div class="modal">
+        <h2>Create Multi-Date Entry</h2>
+        <div style="padding:14px; background:#f8fafc; border-radius:12px; margin-bottom:14px; font-size:13px;">
+            <strong>Selected dates:</strong> ${escapeHtml(datesStr)}
+        </div>
+        <div class="form-col" style="margin-bottom:12px;">
+            <label class="form-label">Type</label>
+            <div class="checkrow" style="gap:20px;">
+                <label><input type="radio" name="mtype" value="event" checked> Event</label>
+                <label><input type="radio" name="mtype" value="task"> Task</label>
+            </div>
+        </div>
+        <div class="form-col" style="margin-bottom:12px;">
+            <label class="form-label">Title *</label>
+            <input id="ms_title" placeholder="e.g. Conference, Study Session" autofocus>
+        </div>
+        <div class="form-col" style="margin-bottom:12px;">
+            <label class="form-label">Description</label>
+            <textarea id="ms_desc" placeholder="Notes..." rows="2"></textarea>
+        </div>
+        <div id="ms_event_fields" style="margin-bottom:12px;">
+            <div class="checkrow" style="margin-bottom:12px;">
+                <input type="checkbox" id="ms_allday" checked>
+                <label for="ms_allday">All-day event</label>
+            </div>
+            <div class="form-grid" id="ms_times" style="display:none;">
+                <div class="form-col">
+                    <label class="form-label">Start Time</label>
+                    <input id="ms_st" type="time" value="09:00">
+                </div>
+                <div class="form-col">
+                    <label class="form-label">End Time</label>
+                    <input id="ms_et" type="time" value="10:00">
+                </div>
+            </div>
+            <div class="form-grid" style="margin-bottom:12px;">
+                <div class="form-col">
+                    <label class="form-label">Color</label>
+                    <input id="ms_color" type="color" value="#6366f1">
+                </div>
+                <div class="form-col">
+                    <label class="form-label">Category</label>
+                    <input id="ms_cat" placeholder="General" value="General">
+                </div>
+            </div>
+        </div>
+        <div id="ms_task_fields" style="display:none; margin-bottom:12px;">
+            <div class="form-grid">
+                <div class="form-col">
+                    <label class="form-label">Priority</label>
+                    <select id="ms_prio">
+                        <option value="low">🟢 Low</option>
+                        <option value="medium" selected>🟡 Medium</option>
+                        <option value="high">🔴 High</option>
+                    </select>
+                </div>
+                <div class="form-col">
+                    <label class="form-label">Category</label>
+                    <input id="ms_task_cat" placeholder="General" value="General">
+                </div>
+            </div>
+            <div class="form-col" style="margin-bottom:12px;">
+                <label class="form-label">Color</label>
+                <input id="ms_task_color" type="color" value="#6366f1">
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="clearSelection()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitMultiSelect()">Create</button>
+        </div>
+    </div></div>`;
+    $('modalRoot').innerHTML = html;
+
+    // Toggle event/task fields
+    const typeRadios = document.querySelectorAll('input[name="mtype"]');
+    const allayCheckbox = $('ms_allday');
+    const timesDiv = $('ms_times');
+
+    typeRadios.forEach(r => r.addEventListener('change', () => {
+        const isEvent = document.querySelector('input[name="mtype"]:checked').value === 'event';
+        $('ms_event_fields').style.display = isEvent ? 'block' : 'none';
+        $('ms_task_fields').style.display = isEvent ? 'none' : 'block';
+    }));
+
+    allayCheckbox.addEventListener('change', () => {
+        timesDiv.style.display = allayCheckbox.checked ? 'none' : 'grid';
+    });
+
+    $('ms_title').focus();
+}
+
+async function submitMultiSelect(){
+    const title = $('ms_title').value.trim();
+    if(!title){ toast('Please enter a title','err'); return; }
+
+    const type = document.querySelector('input[name="mtype"]:checked').value;
+    const isEvent = type === 'event';
+
+    try {
+        if(isEvent){
+            const allday = $('ms_allday').checked;
+            const payload = {
+                dates: S.selectedDates,
+                title,
+                description: $('ms_desc').value.trim(),
+                all_day: allday,
+                start_time: allday ? '00:00' : ($('ms_st').value || '09:00'),
+                end_time: allday ? '23:59' : ($('ms_et').value || '10:00'),
+                color: $('ms_color').value,
+                category: $('ms_cat').value.trim() || 'General',
+                url: '',
+                video_url: '',
+                location: '',
+            };
+            await api.post('/api/events/bulk', payload);
+            toast('Event created');
+        } else {
+            const payload = {
+                dates: S.selectedDates,
+                title,
+                description: $('ms_desc').value.trim(),
+                priority: $('ms_prio').value,
+                color: $('ms_task_color').value,
+                category: $('ms_task_cat').value.trim() || 'General',
+                url: '',
+                video_url: '',
+                completed: false,
+            };
+            await api.post('/api/tasks/bulk', payload);
+            toast('Task created');
+        }
+        clearSelection();
+        await loadAll();
+    } catch(e){
+        console.error(e);
+        toast(e.message || 'Could not create entry','err');
+    }
+}
+
+// Setup event delegation on calendar
+document.addEventListener('click', (e) => {
+    if($('calendar').contains(e.target)) handleCalendarClick(e);
+});
+document.addEventListener('mousedown', (e) => {
+    if($('calendar').contains(e.target)) handleCalendarMouseDown(e);
+});
+document.addEventListener('mousemove', (e) => {
+    if($('calendar').contains(e.target)) handleCalendarMouseMove(e);
+});
+document.addEventListener('mouseup', (e) => {
+    if(S.isSelecting) handleCalendarMouseUp(e);
+});
+document.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape' && S.selectedDates.length > 0) clearSelection();
+});
 
 /* ========= FORMS: TASK ========= */
 function resetTaskForm(){
     S.editTaskId = null;
-    $('formKindTitle').textContent = 'New Task';
     ['fT_title','fT_desc','fT_url','fT_vurl'].forEach(i=>$(i).value='');
     $('fT_cat').value='General';
     $('fT_prio').value='medium';
     $('fT_date').value='';
     $('fT_time').value='';
+    $('fT_start_time').value='';
+    $('fT_end_time').value='';
+    $('fT_repeat').value='';
     $('fT_color').value='#6366f1';
     $('fT_done').checked=false;
+    document.querySelectorAll('input[name="wd"]').forEach(cb=>cb.checked=false);
+    updateRepeatUI();
+}
+function updateRepeatUI(){
+    const repeat = $('fT_repeat').value;
+    const container = $('fT_weekday_container');
+    if(repeat==='FREQ=WEEKLY;BYDAY=custom'){
+        container.style.display='block';
+    } else {
+        container.style.display='none';
+    }
+}
+function selectWeekdays(indices){
+    // indices: 0=Mon, 1=Tue, ..., 4=Fri, 5=Sat, 6=Sun
+    const cbs = document.querySelectorAll('input[name="wd"]');
+    cbs.forEach((cb,i)=>cb.checked=indices.includes(i));
 }
 function openTaskModal(id, presetDate){
     if(id===null || id===undefined){
         resetTaskForm();
         if(presetDate) $('fT_date').value = presetDate;
-        switchView('tasks', document.querySelectorAll('.nav-tab')[2]);
         $('fT_title').focus();
         return;
     }
     const t = S.tasks.find(x=>x.id===id); if(!t) return;
-    S.editTaskId = id;
-    $('formKindTitle').textContent = 'Edit Task · #'+id;
-    $('fT_title').value = t.title||'';
-    $('fT_desc').value = t.description||'';
-    $('fT_prio').value = t.priority||'medium';
-    $('fT_cat').value = t.category||'General';
-    $('fT_date').value = t.due_date||'';
-    $('fT_time').value = t.due_time||'';
-    $('fT_color').value = t.color || pickColor(t.priority);
-    $('fT_done').checked = !!t.completed;
-    $('fT_url').value = t.url||'';
-    $('fT_vurl').value = t.video_url||'';
-    switchView('tasks', document.querySelectorAll('.nav-tab')[2]);
-    $('fT_title').focus();
-    window.scrollTo({top:0, behavior:'smooth'});
+
+    // For recurring tasks, show scope dialog first
+    if(t.recurrence_rule){
+        showRecurrenceScopeDialog('edit', t);
+        return;
+    }
+
+    // For grouped entries (multi-date Feature 1), show scope dialog
+    if(t.group_id){
+        showEditScopeDialog('task', t);
+        return;
+    }
+
+    // Regular single task - open edit form
+    loadTaskIntoForm(t);
+}
+
+function loadTaskIntoForm(t){
+    S.editTaskId = t.id;
+    S.editTaskScope = 'all'; // default scope for regular edits
+
+    // Switch to calendar view and scroll to form
+    switchView('calendar', document.querySelectorAll('.nav-tab')[1]);
+
+    // Fill all form fields
+    const fT_title = $('fT_title');
+    const fT_desc = $('fT_desc');
+    const fT_prio = $('fT_prio');
+    const fT_cat = $('fT_cat');
+    const fT_date = $('fT_date');
+    const fT_time = $('fT_time');
+    const fT_start_time = $('fT_start_time');
+    const fT_end_time = $('fT_end_time');
+    const fT_repeat = $('fT_repeat');
+    const fT_color = $('fT_color');
+    const fT_done = $('fT_done');
+    const fT_url = $('fT_url');
+    const fT_vurl = $('fT_vurl');
+
+    if(!fT_title || !fT_desc || !fT_prio || !fT_cat || !fT_date){
+        console.error('Form fields not found', {fT_title, fT_desc, fT_prio, fT_cat, fT_date});
+        return;
+    }
+
+    fT_title.value = t.title||'';
+    fT_desc.value = t.description||'';
+    fT_prio.value = t.priority||'medium';
+    fT_cat.value = t.category||'General';
+    fT_date.value = t.due_date||'';
+    fT_time.value = t.due_time||'';
+    fT_start_time.value = t.start_time||'';
+    fT_end_time.value = t.end_time||'';
+    fT_repeat.value = t.recurrence_rule||'';
+    fT_color.value = t.color || pickColor(t.priority);
+    fT_done.checked = !!t.completed;
+    fT_url.value = t.url||'';
+    fT_vurl.value = t.video_url||'';
+
+    // Load weekday checkboxes if this is a BYDAY rule
+    document.querySelectorAll('input[name="wd"]').forEach(cb=>cb.checked=false);
+    if(t.recurrence_rule && t.recurrence_rule.includes('BYDAY')){
+        const match = t.recurrence_rule.match(/BYDAY=([^;]+)/);
+        if(match){
+            const days = match[1].split(',');
+            const dayMap = {'MO':0,'TU':1,'WE':2,'TH':3,'FR':4,'SA':5,'SU':6};
+            days.forEach(d=>{
+                const idx = dayMap[d.trim()];
+                if(idx !== undefined) document.querySelectorAll('input[name="wd"]')[idx].checked=true;
+            });
+        }
+    }
+
+    updateRepeatUI();
+    fT_title.focus();
+    // Scroll to form
+    const taskForm = $('taskForm');
+    if(taskForm) taskForm.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function showRecurrenceScopeDialog(action, task){
+    const html = `
+    <div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+        <div class="modal" style="max-width:380px;">
+            <div class="modal-head">
+                <h3>${action==='edit'?'Edit Task':'Delete Task'}</h3>
+                <button class="btn-ghost" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom:16px;color:var(--text-1);">This is a recurring task. Would you like to:</p>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                    <button class="btn" style="justify-content:flex-start; text-align:left;" onclick="handleRecurrenceScope('${action}', ${task.id}, 'this', '${task.due_date}')">
+                        <span style="font-weight:600;">This occurrence only</span>
+                        <span style="display:block; font-size:12px; color:var(--text-2); font-weight:400;">Affects only ${task.due_date}</span>
+                    </button>
+                    <button class="btn" style="justify-content:flex-start; text-align:left;" onclick="handleRecurrenceScope('${action}', ${task.id}, 'all', null)">
+                        <span style="font-weight:600;">All occurrences</span>
+                        <span style="display:block; font-size:12px; color:var(--text-2); font-weight:400;">Affects the entire series</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+    $('modalRoot').innerHTML = html;
+}
+
+function handleRecurrenceScope(action, taskId, scope, occurrenceDate){
+    if(action==='edit'){
+        const t = S.tasks.find(x=>x.id===taskId);
+        if(!t) return;
+        S.editTaskScope = scope;
+        S.editTaskOccurrenceDate = occurrenceDate;
+        loadTaskIntoForm(t);
+        closeModal();
+    } else if(action==='delete'){
+        delTaskWithRecurrenceScope(taskId, scope, occurrenceDate);
+    }
 }
 async function submitTask(){
     const title = $('fT_title').value.trim();
     if(!title){ toast('Please enter a task title','err'); return; }
+
+    // Generate recurrence rule if repeat is selected
+    let recurrenceRule = null;
+    const repeatVal = $('fT_repeat').value;
+    if(repeatVal==='FREQ=WEEKLY;BYDAY=custom'){
+        // Custom weekdays selected
+        const selected = Array.from(document.querySelectorAll('input[name="wd"]:checked')).map(cb=>cb.value);
+        if(selected.length===0){ toast('Please select at least one day','err'); return; }
+        recurrenceRule = `FREQ=WEEKLY;BYDAY=${selected.join(',')}`;
+    } else if(repeatVal){
+        recurrenceRule = repeatVal;
+    }
+
     const body = {
         title,
         description: $('fT_desc').value.trim(),
@@ -1457,10 +2203,13 @@ async function submitTask(){
         category: $('fT_cat').value.trim()||'General',
         due_date: $('fT_date').value || null,
         due_time: $('fT_time').value || null,
+        start_time: $('fT_start_time').value || null,
+        end_time: $('fT_end_time').value || null,
         color: $('fT_color').value,
         completed: $('fT_done').checked,
         url: $('fT_url').value.trim(),
         video_url: $('fT_vurl').value.trim(),
+        recurrence_rule: recurrenceRule,
     };
     try {
         if(S.editTaskId) await api.put('/api/tasks/'+S.editTaskId, body);
@@ -1468,16 +2217,82 @@ async function submitTask(){
         toast(S.editTaskId?'Task updated':'Task added');
         resetTaskForm();
         await loadAll();
-    } catch(e){ toast('Could not save task','err'); }
+    } catch(e){ console.error(e); }
 }
-async function toggleTask(id){ await api.patch('/api/tasks/'+id+'/toggle'); await loadAll(); }
-async function delTask(id){ if(!confirm('Delete this task?')) return; await api.del('/api/tasks/'+id); toast('Task deleted'); await loadAll(); }
+async function toggleTask(id){
+    await api.patch('/api/tasks/'+id+'/toggle');
+    await loadAll();
+}
+
+async function toggleTaskOccurrence(taskId, occurrenceDate){
+    // Toggle a specific occurrence of a recurring task
+    await api.patch(`/api/tasks/${taskId}/toggle?occurrence_date=${occurrenceDate}`);
+    await loadAll();
+}
+async function delTask(id){
+    const t = S.tasks.find(x => x.id === id);
+    if(!t) return;
+
+    // For recurring tasks, show scope dialog
+    if(t.recurrence_rule){
+        showRecurrenceScopeDialog('delete', t);
+        return;
+    }
+
+    // For grouped entries, show scope dialog
+    if(t.group_id){
+        if(!confirm('Delete this date only or all dates in group?')) return;
+        try {
+            const doAll = confirm('Delete ALL dates in this group? (Cancel = delete this date only)');
+            if(doAll) await api.del(`/api/tasks/group/${t.group_id}`);
+            else await api.del('/api/tasks/'+id);
+            toast('Task deleted');
+            await loadAll();
+        } catch(e){ toast('Could not delete task','err'); }
+        return;
+    }
+
+    // Regular single task
+    if(!confirm('Delete this task?')) return;
+    try {
+        await api.del('/api/tasks/'+id);
+        toast('Task deleted');
+        await loadAll();
+    } catch(e){ toast('Could not delete task','err'); }
+}
+
+async function delTaskWithRecurrenceScope(taskId, scope, occurrenceDate){
+    try {
+        if(scope === 'this' && occurrenceDate){
+            // Mark this occurrence as cancelled
+            // For now, we'll delete just this occurrence entry
+            await api.patch(`/api/tasks/${taskId}/toggle?occurrence_date=${occurrenceDate}`);
+            toast('Occurrence removed from series');
+        } else {
+            // Delete entire series
+            if(!confirm('Delete this entire recurring task series?')) return;
+            await api.del('/api/tasks/'+taskId);
+            toast('Recurring task deleted');
+        }
+        await loadAll();
+    } catch(e){
+        console.error('Delete error:', e);
+        toast('Could not delete task','err');
+    }
+}
 
 /* ========= FORMS: EVENT ========= */
 function openEventModal(id, presetDate){
     const today = presetDate || fmtDate(new Date());
     const isEdit = !!id;
     const e = isEdit ? S.events.find(x=>x.id===id) : null;
+
+    // Check if grouped entry - if so, show scope choice first
+    if(isEdit && e && e.group_id){
+        showEditScopeDialog('event', e);
+        return;
+    }
+
     const html = `
     <div class="modal-wrap" onclick="if(event.target===this)closeModal()">
     <div class="modal">
@@ -1536,13 +2351,182 @@ function openEventModal(id, presetDate){
             <label class="form-label">🎬 Video Link (Meeting / Recording)</label>
             <input id="em_vurl" placeholder="Zoom, YouTube..." value="${escapeHtml(e?.video_url||'')}">
         </div>
+        ${isEdit && e?.group_id ? `
+        <div style="padding:10px; background:#f0fdf4; border-radius:10px; margin-bottom:12px; font-size:12px; color:#166534;">
+            <strong>Edit scope:</strong>
+            <div class="checkrow" style="margin-top:8px;">
+                <input type="radio" name="edit_scope" value="this" checked id="es_this">
+                <label for="es_this">This date only</label>
+            </div>
+            <div class="checkrow">
+                <input type="radio" name="edit_scope" value="all" id="es_all">
+                <label for="es_all">All dates in group</label>
+            </div>
+        </div>
+        ` : ''}
         <div class="modal-actions">
-            ${isEdit?`<button class="btn btn-danger" onclick="delEvent(${e.id}); closeModal();">Delete</button>`:''}
+            ${isEdit?`<button class="btn btn-danger" onclick="delEventWithScope(${e.id}, '${e?.group_id||''}'); closeModal();">Delete</button>`:''}
             <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
             <button class="btn btn-primary" onclick="submitEvent(${isEdit?id:'null'})">💾 Save Event</button>
         </div>
     </div></div>`;
     $('modalRoot').innerHTML = html;
+}
+
+function showEditScopeDialog(type, entry){
+    const typeLabel = type === 'event' ? 'Event' : 'Task';
+    const html = `
+    <div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+        <h2>Edit ${typeLabel}</h2>
+        <div style="margin-bottom:14px; font-size:13px;">
+            This ${typeLabel.toLowerCase()} is part of a multi-date group. Would you like to edit only this date or all dates in the group?
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="openEditForScope('${type}', ${entry.id}, 'this')">This Date Only</button>
+            <button class="btn btn-primary" onclick="openEditForScope('${type}', ${entry.id}, 'all')">All Dates in Group</button>
+        </div>
+    </div></div>`;
+    $('modalRoot').innerHTML = html;
+}
+
+function openEditForScope(type, entryId, scope){
+    const entry = type === 'event' ? S.events.find(e => e.id === entryId) : S.tasks.find(t => t.id === entryId);
+    if(!entry) return;
+
+    if(type === 'event'){
+        const html = `
+        <div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+        <div class="modal">
+            <h2>Edit Event <span class="tag">📅 Calendar</span></h2>
+            <div class="form-col" style="margin-bottom:12px;">
+                <label class="form-label">Event Title *</label>
+                <input id="em_title" placeholder="e.g. Team Sync" value="${escapeHtml(entry.title)}">
+            </div>
+            <div class="form-col" style="margin-bottom:12px;">
+                <label class="form-label">Description</label>
+                <textarea id="em_desc" placeholder="Details..." rows="2">${escapeHtml(entry.description||'')}</textarea>
+            </div>
+            ${scope === 'this' ? `
+            <div class="form-grid" style="margin-bottom:12px;">
+                <div class="form-col">
+                    <label class="form-label">Start Date *</label>
+                    <input id="em_sd" type="date" value="${entry.start_date}">
+                </div>
+                <div class="form-col">
+                    <label class="form-label">Start Time</label>
+                    <input id="em_st" type="time" value="${entry.start_time}">
+                </div>
+            </div>
+            <div class="form-grid" style="margin-bottom:12px;">
+                <div class="form-col">
+                    <label class="form-label">End Date</label>
+                    <input id="em_ed" type="date" value="${entry.end_date || entry.start_date}">
+                </div>
+                <div class="form-col">
+                    <label class="form-label">End Time</label>
+                    <input id="em_et" type="time" value="${entry.end_time}">
+                </div>
+            </div>
+            <div class="checkrow" style="margin-bottom:12px;">
+                <input type="checkbox" id="em_allday" ${entry.all_day?'checked':''}>
+                <label for="em_allday">All day event</label>
+            </div>
+            ` : `
+            <div style="padding:10px; background:#e0e7ff; border-radius:10px; margin-bottom:12px; font-size:12px; color:#3730a3;">
+                <strong>Dates are locked for bulk edits.</strong> Editing title, time, and color only.
+            </div>
+            `}
+            <div class="form-grid" style="margin-bottom:12px;">
+                <div class="form-col">
+                    <label class="form-label">🎨 Color</label>
+                    <input id="em_color" type="color" value="${entry.color}">
+                </div>
+                <div class="form-col">
+                    <label class="form-label">🏷 Category</label>
+                    <input id="em_cat" value="${escapeHtml(entry.category)}">
+                </div>
+            </div>
+            <div class="form-col" style="margin-bottom:12px;">
+                <label class="form-label">📍 Location</label>
+                <input id="em_loc" placeholder="Conference room or address" value="${escapeHtml(entry.location||'')}">
+            </div>
+            <div class="form-col" style="margin-bottom:8px;">
+                <label class="form-label">🔗 Website Link</label>
+                <input id="em_url" placeholder="https://..." value="${escapeHtml(entry.url||'')}">
+            </div>
+            <div class="form-col" style="margin-bottom:8px;">
+                <label class="form-label">🎬 Video Link</label>
+                <input id="em_vurl" placeholder="Zoom, YouTube..." value="${escapeHtml(entry.video_url||'')}">
+            </div>
+            <input type="hidden" id="em_scope" value="${scope}">
+            <input type="hidden" id="em_group_id" value="${entry.group_id||''}">
+            <div class="modal-actions">
+                <button class="btn btn-btn" onclick="delEventWithScope(${entry.id}, '${entry.group_id||''}'); closeModal();">Delete</button>
+                <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="submitEventWithScope(${entry.id})">💾 Save Event</button>
+            </div>
+        </div></div>`;
+        $('modalRoot').innerHTML = html;
+    }
+}
+
+async function submitEventWithScope(id){
+    const title = $('em_title').value.trim();
+    const sd = $('em_sd')?.value;
+    if(!title){ toast('Title is required','err'); return; }
+
+    const scope = $('em_scope')?.value || 'this';
+    const groupId = $('em_group_id')?.value;
+    const allDay = $('em_allday')?.checked;
+
+    const bodyBase = {
+        title,
+        description: $('em_desc').value.trim(),
+        all_day: allDay || false,
+        start_time: allDay ? '00:00' : ($('em_st')?.value || '09:00'),
+        end_time: allDay ? '23:59' : ($('em_et')?.value || '10:00'),
+        color: $('em_color').value,
+        category: $('em_cat').value.trim() || 'General',
+        location: $('em_loc').value.trim(),
+        url: $('em_url').value.trim(),
+        video_url: $('em_vurl').value.trim(),
+    };
+
+    try {
+        if(scope === 'all' && groupId){
+            // Bulk update - do NOT include dates
+            await api.put(`/api/events/group/${groupId}`, bodyBase);
+            toast('All events updated');
+        } else {
+            // Single update (scope === 'this')
+            const body = { ...bodyBase };
+            if(sd) body.start_date = sd;
+            if($('em_ed')?.value) body.end_date = $('em_ed').value;
+            await api.put('/api/events/'+id, body);
+            toast('Event updated');
+        }
+        closeModal();
+        await loadAll();
+    } catch(e){ toast('Could not save event','err'); }
+}
+
+async function delEventWithScope(id, groupId){
+    if(!confirm(groupId ? 'Delete this date only or all dates in group?' : 'Delete this event?')) return;
+
+    try {
+        if(groupId){
+            const doAll = confirm('Delete ALL dates in this group? (Cancel = delete this date only)');
+            if(doAll) await api.del(`/api/events/group/${groupId}`);
+            else await api.del('/api/events/'+id);
+        } else {
+            await api.del('/api/events/'+id);
+        }
+        closeModal();
+        toast('Event deleted');
+        await loadAll();
+    } catch(e){ toast('Could not delete event','err'); }
 }
 async function submitEvent(id){
     const title = $('em_title').value.trim();
@@ -1698,6 +2682,57 @@ async function checkSyncStatus(){
 }
 
 /* ========= LOAD ========= */
+/* ========= RECURRENCE HELPERS ========= */
+// Expand recurring tasks and merge with regular tasks for a date range
+async function getTasksForDateRange(startDate, endDate){
+    // Get all regular (non-recurring) tasks
+    let allTasks = S.tasks.filter(t=>!t.recurrence_rule).slice();
+
+    // Get recurring task occurrences from backend
+    try {
+        const start = fmtDate(startDate);
+        const end = fmtDate(endDate);
+        const occurrences = await api.get(`/api/tasks/recurrence-expand?start=${start}&end=${end}`);
+
+        // Create a task instance for each occurrence
+        occurrences.forEach(occ => {
+            const baseTask = S.tasks.find(t => t.id === occ.task_id);
+            if(baseTask){
+                // Clone the task but override the due_date and completion status
+                const taskCopy = {...baseTask, due_date: occ.occurrence_date, completed: occ.completed};
+                allTasks.push(taskCopy);
+            }
+        });
+    } catch(e){
+        console.error('Error expanding recurrence:', e);
+    }
+
+    return allTasks;
+}
+
+// Expand recurring events for a date range
+async function getEventsForDateRange(startDate, endDate){
+    let allEvents = S.events.filter(e=>!e.recurrence_rule).slice();
+
+    try {
+        const start = fmtDate(startDate);
+        const end = fmtDate(endDate);
+        const occurrences = await api.get(`/api/events/recurrence-expand?start=${start}&end=${end}`);
+
+        occurrences.forEach(occ => {
+            const baseEvent = S.events.find(e => e.id === occ.event_id);
+            if(baseEvent){
+                const eventCopy = {...baseEvent, start_date: occ.occurrence_date};
+                allEvents.push(eventCopy);
+            }
+        });
+    } catch(e){
+        console.error('Error expanding event recurrence:', e);
+    }
+
+    return allEvents;
+}
+
 async function loadAll(){
     const [tasks, dash, bookmarks] = await Promise.all([
         api.get('/api/tasks'),
@@ -1711,13 +2746,24 @@ async function loadAll(){
     const end = new Date(y,m+2,0);
     S.events = await api.get(`/api/events?start=${fmtDate(new Date(y,m,1))}&end=${fmtDate(end)}`);
 
+    // Pre-fetch recurring task and event expansions for calendar display
+    try {
+        const start = fmtDate(new Date(y,m,1));
+        const endDate = fmtDate(end);
+        S.expandedTasks = await getTasksForDateRange(new Date(y,m,1), end);
+        S.expandedEvents = await getEventsForDateRange(new Date(y,m,1), end);
+    } catch(e){
+        console.error('Error fetching recurring expansions:', e);
+        S.expandedTasks = S.tasks.filter(t=>!t.recurrence_rule);
+        S.expandedEvents = S.events.filter(e=>!e.recurrence_rule);
+    }
+
     updateStats(dash);
     renderToday();
     renderWeek();
     renderDashBm();
     renderCalendar();
-    renderSelected();
-    renderAllTasks();
+    await renderAllTasksWithRecurrence();
     renderBookmarksPage();
     checkSyncStatus();
 }
@@ -1729,6 +2775,289 @@ async function loadAll(){
     $('greet').textContent = greet + ' · ' + new Date().toLocaleDateString('en-US',{year:'numeric', month:'long', day:'numeric'});
     await loadAll();
 })();
+
+/* ========= AI PLANNER ========= */
+
+// Current AI plan result storage
+let S_aiPlan = null;
+
+function openAIPlannerModal(){
+    const html = `
+    <div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+        <div class="modal ai-modal-wide">
+            <h2>🤖 AI Planner</h2>
+
+            <div class="ai-tabs">
+                <button class="ai-tab-btn active" onclick="switchAITab('text')">📝 Text Input</button>
+                <button class="ai-tab-btn" onclick="switchAITab('upload')">📄 Upload File</button>
+            </div>
+
+            <div id="ai-tab-text" class="ai-tab-content active">
+                <textarea id="aiPlanInput" class="ai-textarea"
+                    placeholder="Describe your plans in natural language, e.g.:
+• Monday: gym at 6am, team meeting at 2pm
+• Tuesday: dentist appointment at 3pm (1 hour)
+• Wednesday thru Friday: submit project report by 5pm
+• Every day: check emails at 9am"></textarea>
+                <div style="font-size:12px; color:var(--text-3); margin-top:6px;">
+                    Tip: Include dates, times, and durations for best results.
+                </div>
+            </div>
+
+            <div id="ai-tab-upload" class="ai-tab-content">
+                <div class="ai-file-area" onclick="document.getElementById('aiFileInput').click()">
+                    <input type="file" id="aiFileInput" accept=".pdf,.jpg,.jpeg,.png,.txt" onchange="handleAIFileSelect(this)">
+                    <div style="font-size:32px; margin-bottom:10px;">📎</div>
+                    <div style="font-size:14px; font-weight:600; color:var(--text-1);">Click to upload a file</div>
+                    <div style="font-size:12px; color:var(--text-3); margin-top:5px;">PDF, image, or text file (max 10MB)</div>
+                    <div id="aiFileName" style="margin-top:10px; font-size:13px; color:var(--accent); font-weight:500;"></div>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+                <button id="aiAnalyzeBtn" class="btn btn-primary" onclick="submitAIPlan()">✨ Analyze</button>
+            </div>
+        </div>
+    </div>`;
+    $('modalRoot').innerHTML = html;
+}
+
+function switchAITab(tab) {
+    // Update tab buttons
+    document.querySelectorAll('.ai-tab-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', (i === 0 && tab === 'text') || (i === 1 && tab === 'upload'));
+    });
+    // Update tab content
+    document.querySelectorAll('.ai-tab-content').forEach(el => el.classList.remove('active'));
+    const content = $('ai-tab-' + tab);
+    if (content) content.classList.add('active');
+}
+
+function handleAIFileSelect(input) {
+    const file = input.files[0];
+    if (file) {
+        $('aiFileName').textContent = `✓ ${file.name} (${(file.size/1024/1024).toFixed(1)}MB)`;
+    }
+}
+
+async function submitAIPlan() {
+    const btn = $('aiAnalyzeBtn');
+    const activeTab = document.querySelector('.ai-tab-content.active');
+    const isTextTab = activeTab && activeTab.id === 'ai-tab-text';
+
+    // Validate input
+    let textInput = '';
+    let fileInput = null;
+
+    if (isTextTab) {
+        textInput = ($('aiPlanInput') && $('aiPlanInput').value.trim()) || '';
+        if (!textInput) {
+            toast('Please describe your plans first', 'err');
+            return;
+        }
+    } else {
+        const fileEl = $('aiFileInput');
+        if (!fileEl || !fileEl.files || !fileEl.files[0]) {
+            toast('Please select a file first', 'err');
+            return;
+        }
+        fileInput = fileEl.files[0];
+    }
+
+    // Show loading state
+    btn.innerHTML = '<span class="ai-spinner"></span>Analyzing...';
+    btn.disabled = true;
+
+    try {
+        // Build form data
+        const formData = new FormData();
+        if (textInput) {
+            formData.append('text', textInput);
+        }
+        if (fileInput) {
+            formData.append('file', fileInput);
+        }
+        formData.append('include_conflicts', 'true');
+
+        // Call AI endpoint
+        const response = await fetch('/api/ai/plan', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({detail: 'AI analysis failed'}));
+            throw new Error(err.detail || 'AI analysis failed');
+        }
+
+        const result = await response.json();
+        S_aiPlan = result;
+
+        // Show preview
+        showAIPlanPreview(result);
+
+    } catch (e) {
+        console.error('AI Planner error:', e);
+        toast(e.message || 'AI analysis failed. Check your Groq API key.', 'err');
+        btn.innerHTML = '✨ Analyze';
+        btn.disabled = false;
+    }
+}
+
+function showAIPlanPreview(result) {
+    const tasks = result.tasks || [];
+    const events = result.events || [];
+    const conflicts = result.conflicts || [];
+    const total = tasks.length + events.length;
+
+    let conflictHtml = '';
+    if (conflicts.length > 0) {
+        conflictHtml = `
+        <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:12px; padding:12px 14px; margin-bottom:14px;">
+            <div style="font-weight:600; color:#dc2626; margin-bottom:6px;">⚠️ ${conflicts.length} conflict${conflicts.length>1?'s':''} detected</div>
+            ${conflicts.map(c => `<div style="font-size:12.5px; color:#b91c1c; margin-bottom:3px;">
+                • <strong>${escapeHtml(c.ai_item||'')}</strong> conflicts with <strong>${escapeHtml(c.existing_item||'')}</strong>
+                ${c.overlap ? `<span style="color:#dc2626;"> (${escapeHtml(c.overlap)})</span>` : ''}
+            </div>`).join('')}
+        </div>`;
+    }
+
+    let tasksHtml = '';
+    if (tasks.length > 0) {
+        tasksHtml = `
+        <div class="ai-preview-header">
+            <h4>📋 Tasks (${tasks.length})</h4>
+        </div>
+        ${tasks.map((t, i) => `
+        <div class="ai-item-card${t.conflict?' conflict':''}">
+            <div class="ai-item-icon">✓</div>
+            <div class="ai-item-details">
+                <div class="ai-item-title">${escapeHtml(t.title||'Untitled')}</div>
+                <div class="ai-item-meta">
+                    ${t.due_date ? `<span>📅 ${t.due_date}</span>` : ''}
+                    ${t.due_time ? `<span>🕐 ${t.due_time}</span>` : ''}
+                    ${t.priority ? `<span style="color:${t.priority==='high'?'#dc2626':t.priority==='medium'?'#d97706':'#16a34a'}">● ${t.priority}</span>` : ''}
+                </div>
+                ${t.description ? `<div style="font-size:12px; color:var(--text-2); margin-top:4px;">${escapeHtml(t.description)}</div>` : ''}
+                ${t.conflict ? `<div class="ai-conflict-badge">⚠ Conflict</div>` : ''}
+            </div>
+        </div>`).join('')}`;
+    }
+
+    let eventsHtml = '';
+    if (events.length > 0) {
+        eventsHtml = `
+        <div class="ai-preview-header">
+            <h4>📅 Events (${events.length})</h4>
+        </div>
+        ${events.map((e, i) => `
+        <div class="ai-item-card${e.conflict?' conflict':''}">
+            <div class="ai-item-icon">📆</div>
+            <div class="ai-item-details">
+                <div class="ai-item-title">${escapeHtml(e.title||'Untitled')}</div>
+                <div class="ai-item-meta">
+                    ${e.start_date ? `<span>📅 ${e.start_date}</span>` : ''}
+                    ${e.start_time ? `<span>🕐 ${e.start_time}</span>` : ''}
+                    ${e.duration_minutes ? `<span>⏱ ${e.duration_minutes}min</span>` : ''}
+                    ${e.location ? `<span>📍 ${escapeHtml(e.location)}</span>` : ''}
+                </div>
+                ${e.description ? `<div style="font-size:12px; color:var(--text-2); margin-top:4px;">${escapeHtml(e.description)}</div>` : ''}
+                ${e.conflict ? `<div class="ai-conflict-badge">⚠ Conflict</div>` : ''}
+            </div>
+        </div>`).join('')}`;
+    }
+
+    if (total === 0) {
+        const html = `
+        <div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+            <div class="modal ai-modal-wide">
+                <h2>🤖 AI Planner</h2>
+                <div class="ai-empty">
+                    <div style="font-size:40px; margin-bottom:12px;">🔍</div>
+                    <div style="font-weight:600; margin-bottom:6px;">No items found</div>
+                    <div>Try being more specific with dates and times.</div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+                    <button class="btn btn-primary" onclick="openAIPlannerModal()">← Try Again</button>
+                </div>
+            </div>
+        </div>`;
+        $('modalRoot').innerHTML = html;
+        return;
+    }
+
+    const html = `
+    <div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+        <div class="modal ai-modal-wide">
+            <h2>🤖 AI Planner <span class="tag">${total} item${total>1?'s':''} found</span></h2>
+            <div class="ai-preview-section">
+                ${conflictHtml}
+                ${tasksHtml}
+                ${eventsHtml}
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" onclick="openAIPlannerModal()">← Edit Input</button>
+                <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="createAIPlanItems()">✅ Create All (${total})</button>
+            </div>
+        </div>
+    </div>`;
+    $('modalRoot').innerHTML = html;
+}
+
+async function createAIPlanItems() {
+    if (!S_aiPlan) return;
+
+    const tasks = S_aiPlan.tasks || [];
+    const events = S_aiPlan.events || [];
+
+    try {
+        let created = 0;
+
+        // Create tasks
+        if (tasks.length > 0) {
+            const taskBodies = tasks.map(t => ({
+                title: t.title || 'Untitled Task',
+                due_date: t.due_date || null,
+                due_time: t.due_time || null,
+                priority: t.priority || 'medium',
+                description: t.description || '',
+                completed: false,
+            }));
+            console.log('Creating tasks:', taskBodies);
+            const taskResp = await api.post('/api/tasks/bulk', taskBodies);
+            console.log('Tasks created:', taskResp);
+            created += tasks.length;
+        }
+
+        // Create events
+        if (events.length > 0) {
+            const eventBodies = events.map(e => ({
+                title: e.title || 'Untitled Event',
+                start_date: e.start_date || fmtDate(new Date()),
+                start_time: e.start_time || '09:00',
+                duration_minutes: e.duration_minutes || 60,
+                location: e.location || '',
+                description: e.description || '',
+            }));
+            console.log('Creating events:', eventBodies);
+            const eventResp = await api.post('/api/events/bulk', eventBodies);
+            console.log('Events created:', eventResp);
+            created += events.length;
+        }
+
+        closeModal();
+        S_aiPlan = null;
+        toast(`✅ Created ${created} item${created>1?'s':''} from AI plan`);
+        await loadAll();
+
+    } catch (e) {
+        console.error('Error creating AI plan items:', e);
+        toast('Could not create items: ' + (e.message || 'Unknown error'), 'err');
+    }
+}
 </script>
 </body>
 </html>
