@@ -1274,10 +1274,6 @@
                                 <label class="form-label">Due Date</label>
                                 <input id="fT_date" type="date">
                             </div>
-                            <div class="form-col">
-                                <label class="form-label">Due Time</label>
-                                <input id="fT_time" type="time">
-                            </div>
                         </div>
                         <div class="form-grid" style="margin-bottom:12px;">
                             <div class="form-col">
@@ -1437,8 +1433,23 @@ const api = {
             }
             const r = await fetch(path, opts);
             if(!r.ok) {
-                const e = await r.json().catch(()=>({}));
-                const msg = e.detail || `HTTP ${r.status}`;
+                let msg = `HTTP ${r.status}`;
+                try {
+                    const e = await r.json();
+                    if(e.detail) {
+                        if(Array.isArray(e.detail)) {
+                            // FastAPI validation errors: detail is array of {msg, ...}
+                            msg = e.detail.map(err => {
+                                let m = err.msg || String(err);
+                                return m.replace(/^Value error, /, '');
+                            }).join('; ');
+                        } else {
+                            msg = e.detail;
+                        }
+                    }
+                } catch(parseErr) {
+                    // Not JSON, use HTTP status only
+                }
                 toast(msg, 'err');
                 const err = new Error(msg);
                 err.handled = true;
@@ -1746,8 +1757,9 @@ function getItemsForDate(ds) {
 
     const allDayEvs = dayEvs.filter(e => e.all_day).map(e => ({...e, type: 'event'})).sort((a,b) => (a.title||'').localeCompare(b.title||''));
     const timedEvs = dayEvs.filter(e => !e.all_day).map(e => ({...e, type: 'event'})).sort((a,b) => (a.start_time||'').localeCompare(b.start_time||''));
-    const allDayTs = dayTs.filter(t => !t.start_time).map(t => ({...t, type: 'task'})).sort((a,b) => (a.title||'').localeCompare(b.title||''));
-    const timedTs = dayTs.filter(t => t.start_time).map(t => ({...t, type: 'task'})).sort((a,b) => (a.start_time||'').localeCompare(b.start_time||''));
+    // For tasks: use start_time || due_time to determine timed vs all-day grouping
+    const allDayTs = dayTs.filter(t => !(t.start_time || t.due_time)).map(t => ({...t, type: 'task'})).sort((a,b) => (a.title||'').localeCompare(b.title||''));
+    const timedTs = dayTs.filter(t => (t.start_time || t.due_time)).map(t => ({...t, type: 'task'})).sort((a,b) => ((a.start_time || a.due_time)||'').localeCompare((b.start_time || b.due_time)||''));
 
     return [...allDayEvs, ...timedEvs, ...allDayTs, ...timedTs];
 }
@@ -1820,7 +1832,7 @@ function renderCalendar(){
             const col = item.color || (isEvent ? '#6366f1' : pickColor(item.priority));
             const isDone = item.completed;
             const title = escapeHtml((item.title || '').substring(0, 20));
-            const timeStr = item.start_time ? item.start_time.substring(0,5) : '';
+            const timeStr = (item.start_time || item.due_time) ? (item.start_time || item.due_time).substring(0,5) : '';
             const displayText = timeStr ? timeStr + ' ' + title : title;
             const chipClass = `cal-chip ${isEvent ? 'event' : 'task'} ${isDone ? 'done' : ''} ${!timeStr ? 'allday' : ''}`;
             const dataId = isEvent ? `event-${item.id}` : `task-${item.id}`;
@@ -2186,7 +2198,6 @@ function resetTaskForm(){
     $('fT_cat').value='General';
     $('fT_prio').value='medium';
     $('fT_date').value='';
-    $('fT_time').value='';
     $('fT_start_time').value='';
     $('fT_end_time').value='';
     $('fT_repeat').value='';
@@ -2250,7 +2261,6 @@ function loadTaskIntoForm(t){
     const fT_prio = $('fT_prio');
     const fT_cat = $('fT_cat');
     const fT_date = $('fT_date');
-    const fT_time = $('fT_time');
     const fT_start_time = $('fT_start_time');
     const fT_end_time = $('fT_end_time');
     const fT_repeat = $('fT_repeat');
@@ -2269,7 +2279,6 @@ function loadTaskIntoForm(t){
     fT_prio.value = t.priority||'medium';
     fT_cat.value = t.category||'General';
     fT_date.value = t.due_date||'';
-    fT_time.value = t.due_time||'';
     // If editing old task with only due_time, use it as start_time
     fT_start_time.value = t.start_time || t.due_time || '';
     fT_end_time.value = t.end_time||'';
@@ -2368,9 +2377,9 @@ async function submitTask(){
         priority: $('fT_prio').value,
         category: $('fT_cat').value.trim()||'General',
         due_date: $('fT_date').value || null,
-        due_time: $('fT_time').value || null,
         start_time: $('fT_start_time').value || null,
         end_time: $('fT_end_time').value || null,
+        due_time: $('fT_start_time').value || null,
         color: $('fT_color').value,
         completed: $('fT_done').checked,
         url: $('fT_url').value.trim(),

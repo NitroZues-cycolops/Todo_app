@@ -353,6 +353,13 @@ def update_task(task_id: int, task: schemas.TaskUpdate, db: Session = Depends(ge
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
     update_data = task.dict(exclude_unset=True)
+
+    # Validate time constraints on merged values
+    merged_start = update_data.get('start_time', db_task.start_time)
+    merged_end = update_data.get('end_time', db_task.end_time)
+    if merged_start and merged_end and merged_end <= merged_start:
+        raise HTTPException(status_code=422, detail="end_time must be after start_time")
+
     for key, value in update_data.items():
         setattr(db_task, key, value)
     db.commit()
