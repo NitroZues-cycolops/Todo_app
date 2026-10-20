@@ -1428,92 +1428,35 @@ function selDateStr(){ return fmtDate(S.selected); }
 
 /* ========= API ========= */
 const api = {
-    get: async p => {
+    request: async (method, path, body) => {
         try {
-            const r = await fetch(p);
+            const opts = { method };
+            if(method !== 'GET' && method !== 'DELETE') {
+                opts.headers = { 'Content-Type': 'application/json' };
+                if(body) opts.body = JSON.stringify(body);
+            }
+            const r = await fetch(path, opts);
             if(!r.ok) {
                 const e = await r.json().catch(()=>({}));
                 const msg = e.detail || `HTTP ${r.status}`;
                 toast(msg, 'err');
-                throw new Error(msg);
+                const err = new Error(msg);
+                err.handled = true;
+                throw err;
             }
             return await r.json();
         } catch(err) {
-            // Don't double-toast if it's already an HTTP error
-            if(!err.message.startsWith('HTTP')) {
-                toast("Can't reach the server: " + err.message, 'err');
+            if(!err.handled) {
+                toast("Can't reach the server", 'err');
             }
             throw err;
         }
     },
-    post: async (p,b) => {
-        try {
-            const r = await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
-            if(!r.ok) {
-                const e = await r.json().catch(()=>({}));
-                const msg = e.detail || `HTTP ${r.status}`;
-                toast(msg, 'err');
-                throw new Error(msg);
-            }
-            return await r.json();
-        } catch(err) {
-            if(!err.message.startsWith('HTTP')) {
-                toast("Can't reach the server: " + err.message, 'err');
-            }
-            throw err;
-        }
-    },
-    put: async (p,b) => {
-        try {
-            const r = await fetch(p,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
-            if(!r.ok) {
-                const e = await r.json().catch(()=>({}));
-                const msg = e.detail || `HTTP ${r.status}`;
-                toast(msg, 'err');
-                throw new Error(msg);
-            }
-            return await r.json();
-        } catch(err) {
-            if(!err.message.startsWith('HTTP')) {
-                toast("Can't reach the server: " + err.message, 'err');
-            }
-            throw err;
-        }
-    },
-    patch: async (p,b) => {
-        try {
-            const r = await fetch(p,{method:'PATCH',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
-            if(!r.ok) {
-                const e = await r.json().catch(()=>({}));
-                const msg = e.detail || `HTTP ${r.status}`;
-                toast(msg, 'err');
-                throw new Error(msg);
-            }
-            return await r.json();
-        } catch(err) {
-            if(!err.message.startsWith('HTTP')) {
-                toast("Can't reach the server: " + err.message, 'err');
-            }
-            throw err;
-        }
-    },
-    del: async p => {
-        try {
-            const r = await fetch(p,{method:'DELETE'});
-            if(!r.ok) {
-                const e = await r.json().catch(()=>({}));
-                const msg = e.detail || `HTTP ${r.status}`;
-                toast(msg, 'err');
-                throw new Error(msg);
-            }
-            return await r.json();
-        } catch(err) {
-            if(!err.message.startsWith('HTTP')) {
-                toast("Can't reach the server: " + err.message, 'err');
-            }
-            throw err;
-        }
-    },
+    get: async p => api.request('GET', p),
+    post: async (p, b) => api.request('POST', p, b),
+    put: async (p, b) => api.request('PUT', p, b),
+    patch: async (p, b) => api.request('PATCH', p, b),
+    del: async p => api.request('DELETE', p),
 };
 
 function toast(msg, type='ok'){
@@ -1796,6 +1739,19 @@ document.addEventListener('click', (e)=>{
     if(btn){ S.view = btn.dataset.v; setViewSeg(); renderCalendar(); }
 });
 
+/* Get sorted items for a date from cache, used by both calendar cells and day list */
+function getItemsForDate(ds) {
+    const dayEvs = (S.expandedEvents || []).filter(e => (e.start_date || e.occurrence_date) === ds);
+    const dayTs = (S.expandedTasks || []).filter(t => t.due_date === ds);
+
+    const allDayEvs = dayEvs.filter(e => e.all_day).map(e => ({...e, type: 'event'})).sort((a,b) => (a.title||'').localeCompare(b.title||''));
+    const timedEvs = dayEvs.filter(e => !e.all_day).map(e => ({...e, type: 'event'})).sort((a,b) => (a.start_time||'').localeCompare(b.start_time||''));
+    const allDayTs = dayTs.filter(t => !t.start_time).map(t => ({...t, type: 'task'})).sort((a,b) => (a.title||'').localeCompare(b.title||''));
+    const timedTs = dayTs.filter(t => t.start_time).map(t => ({...t, type: 'task'})).sort((a,b) => (a.start_time||'').localeCompare(b.start_time||''));
+
+    return [...allDayEvs, ...timedEvs, ...allDayTs, ...timedTs];
+}
+
 function renderCalendar(){
     setViewSeg();
     const today = new Date(); today.setHours(0,0,0,0);
@@ -1852,19 +1808,15 @@ function renderCalendar(){
         const dayEvs = allEventsMap[ds] || [];
         const dayTs = allTasksMap[ds] || [];
 
-        // Combine and sort: all-day first, then by start time
-        const allDayEvs = dayEvs.filter(e => e.all_day).sort((a,b) => (a.title||'').localeCompare(b.title||''));
-        const timedEvs = dayEvs.filter(e => !e.all_day).sort((a,b) => (a.start_time||'').localeCompare(b.start_time||''));
-        const allDayTs = dayTs.filter(t => !t.start_time).sort((a,b) => (a.title||'').localeCompare(b.title||''));
-        const timedTs = dayTs.filter(t => t.start_time).sort((a,b) => (a.start_time||'').localeCompare(b.start_time||''));
-
-        const sortedItems = [...allDayEvs, ...timedEvs, ...allDayTs, ...timedTs];
-        const displayItems = sortedItems.slice(0, 3);
-        const moreCount = Math.max(0, sortedItems.length - 3);
+    // Combine and sort: all-day first, then by start time
+        const sortedItems = getItemsForDate(ds);
+        const maxChips = window.innerWidth <= 720 ? 2 : 3;
+        const displayItems = sortedItems.slice(0, maxChips);
+        const moreCount = Math.max(0, sortedItems.length - maxChips);
 
         let chipsHtml = '';
         displayItems.forEach(item => {
-            const isEvent = item.start_date !== undefined;
+            const isEvent = item.type === 'event';
             const col = item.color || (isEvent ? '#6366f1' : pickColor(item.priority));
             const isDone = item.completed;
             const title = escapeHtml((item.title || '').substring(0, 20));
@@ -1877,7 +1829,7 @@ function renderCalendar(){
             chipsHtml += `<div class="${chipClass}" style="--chip-color:${col}; --chip-bg:${col};" onclick="event.stopPropagation(); ${handler}" data-item="${dataId}" title="${escapeHtml(item.title)}">${displayText}</div>`;
         });
 
-        const moreBtn = moreCount > 0 ? `<span class="cal-more" onclick="event.stopPropagation(); showDayList('${ds}', ${JSON.stringify(sortedItems).replace(/"/g, '&quot;')})">+${moreCount} more</span>` : '';
+        const moreBtn = moreCount > 0 ? `<span class="cal-more" onclick="event.stopPropagation(); showDayList('${ds}')">+${moreCount} more</span>` : '';
 
         html += `<div class="cal-cell ${c.other?'other':''} ${isToday?'today':''} ${sel?'selected':''} ${inSelection?'in-selection':''}" data-date="${ds}" onclick="pickDate('${ds}')">
             <div class="cal-num">${c.d.getDate()}</div>
@@ -1887,8 +1839,10 @@ function renderCalendar(){
     });
     cal.innerHTML = html;
 }
-function showDayList(ds, items){
-    // Parse items array and show a popup list
+function showDayList(ds){
+    // Get sorted items for this date
+    const items = getItemsForDate(ds);
+
     const html = `
     <div class="cal-day-list">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -1896,7 +1850,7 @@ function showDayList(ds, items){
             <button class="btn btn-sm btn-ghost" onclick="closeDayList()" style="padding:4px 8px;">✕</button>
         </div>
         ${items.map((item, idx) => {
-            const isEvent = item.start_date !== undefined;
+            const isEvent = item.type === 'event';
             const col = item.color || (isEvent ? '#6366f1' : pickColor(item.priority));
             const isDone = item.completed;
             const timeStr = item.start_time ? item.start_time.substring(0,5) + ' ' : '';
